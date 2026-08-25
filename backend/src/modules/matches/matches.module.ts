@@ -1,0 +1,13 @@
+import { Module } from '@nestjs/common';
+import { MatchesService } from './matches.service';
+import { MatchesController } from './matches.controller';
+import { DatabaseModule } from '../../database/database.module';
+import { RedisModule } from '../../redis/redis.module';
+import { SocketModule } from '../../socket/socket.module';
+
+@Module({
+  imports: [DatabaseModule, RedisModule, SocketModule],
+  providers: [MatchesService],
+  controllers: [MatchesController],
+})
+export class MatchesModule {}
