@@ -9,14 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@mantine/core": "^9.6.0",
+    "@mantine/hooks": "^9.6.0",
+    "@monaco-editor/react": "^4.7.0",
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "socket.io-client": "^4.7.2",
-    "@monaco-editor/react": "^6.4.6"
-  },
-  "optionalDependencies": {
-  
+    "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
