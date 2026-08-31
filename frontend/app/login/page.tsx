@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Code2, EyeOff, Globe, Lock, Mail, Sparkles, Target, Trophy, Zap } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 
 const featureHighlights = [
-  { icon: '⚡', title: 'Real-time battles', text: 'Challenge developers in live 1v1 matches.' },
-  { icon: '🏆', title: 'Climb the leaderboard', text: 'Earn points and prove your skills.' },
-  { icon: '◎', title: 'Sharpen your skills', text: 'Practice with real challenges and feedback.' },
+  { icon: Zap, title: 'Real-time battles', text: 'Challenge developers in live 1v1 matches.' },
+  { icon: Trophy, title: 'Climb the leaderboard', text: 'Earn points and prove your skills.' },
+  { icon: Target, title: 'Sharpen your skills', text: 'Practice with real challenges and feedback.' },
 ];
 
 export default function LoginPage() {
@@ -43,15 +44,21 @@ export default function LoginPage() {
         </p>
 
         <div className="feature-list">
-          {featureHighlights.map((item) => (
-            <div key={item.title} className="feature-item">
-              <span className="feature-icon">{item.icon}</span>
-              <div>
-                <div className="feature-title">{item.title}</div>
-                <div className="feature-text">{item.text}</div>
+          {featureHighlights.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <div key={item.title} className="feature-item">
+                <span className="feature-icon">
+                  <Icon size={16} strokeWidth={2.2} />
+                </span>
+                <div>
+                  <div className="feature-title">{item.title}</div>
+                  <div className="feature-text">{item.text}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="auth-signup-link">
@@ -67,7 +74,7 @@ export default function LoginPage() {
           <form onSubmit={handle} className="auth-form">
             <label className="field-label">Email</label>
             <div className="input-shell">
-              <span className="input-icon">✉</span>
+              <span className="input-icon"><Mail size={16} strokeWidth={2.2} /></span>
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -78,14 +85,14 @@ export default function LoginPage() {
 
             <label className="field-label">Password</label>
             <div className="input-shell">
-              <span className="input-icon">🔒</span>
+              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
               <input
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
                 type="password"
               />
-              <span className="input-icon right">◌</span>
+              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
             </div>
 
             <div className="form-meta">
@@ -101,11 +108,11 @@ export default function LoginPage() {
 
           <div className="social-stack">
             <button type="button" className="social-btn">
-              <span>◉</span>
+              <Globe size={18} strokeWidth={2.1} />
               Continue with GitHub
             </button>
             <button type="button" className="social-btn">
-              <span>G</span>
+              <Code2 size={18} strokeWidth={2.1} />
               Continue with Google
             </button>
           </div>

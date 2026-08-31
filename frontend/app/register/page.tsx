@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AtSign, Code2, EyeOff, Globe, Lock, Mail, Sparkles, Trophy, UserRound, Zap } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 
 export default function RegisterPage() {
@@ -41,21 +42,21 @@ export default function RegisterPage() {
 
         <div className="feature-list">
           <div className="feature-item">
-            <span className="feature-icon feature-icon--blue">⚡</span>
+            <span className="feature-icon feature-icon--blue"><Zap size={16} strokeWidth={2.2} /></span>
             <div>
               <div className="feature-title">Real-time battles</div>
               <div className="feature-text">Challenge developers in live 1v1 matches.</div>
             </div>
           </div>
           <div className="feature-item">
-            <span className="feature-icon feature-icon--purple">🏆</span>
+            <span className="feature-icon feature-icon--purple"><Trophy size={16} strokeWidth={2.2} /></span>
             <div>
               <div className="feature-title">Climb the leaderboard</div>
               <div className="feature-text">Earn points and prove your skills.</div>
             </div>
           </div>
           <div className="feature-item">
-            <span className="feature-icon feature-icon--green">◎</span>
+            <span className="feature-icon feature-icon--green"><Sparkles size={16} strokeWidth={2.2} /></span>
             <div>
               <div className="feature-title">Sharpen your skills</div>
               <div className="feature-text">Practice with real challenges and feedback.</div>
@@ -78,7 +79,7 @@ export default function RegisterPage() {
               <div className="field-group">
                 <label className="field-label">Full name</label>
                 <div className="input-shell">
-                  <span className="input-icon">◌</span>
+                  <span className="input-icon"><UserRound size={16} strokeWidth={2.2} /></span>
                   <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
                 </div>
               </div>
@@ -86,7 +87,7 @@ export default function RegisterPage() {
               <div className="field-group">
                 <label className="field-label">Username</label>
                 <div className="input-shell input-shell--tight">
-                  <span className="input-icon">@</span>
+                  <span className="input-icon"><AtSign size={16} strokeWidth={2.2} /></span>
                   <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="johndoe" />
                 </div>
               </div>
@@ -94,22 +95,22 @@ export default function RegisterPage() {
 
             <label className="field-label">Email address</label>
             <div className="input-shell">
-              <span className="input-icon">✉</span>
+              <span className="input-icon"><Mail size={16} strokeWidth={2.2} /></span>
               <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" />
             </div>
 
             <label className="field-label">Password</label>
             <div className="input-shell">
-              <span className="input-icon">🔒</span>
+              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
               <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a strong password" type="password" />
-              <span className="input-icon right">◌</span>
+              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
             </div>
 
             <label className="field-label">Confirm password</label>
             <div className="input-shell">
-              <span className="input-icon">🔒</span>
+              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
               <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm your password" type="password" />
-              <span className="input-icon right">◌</span>
+              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
             </div>
 
             <div className="password-rules">
@@ -127,11 +128,11 @@ export default function RegisterPage() {
 
           <div className="social-stack">
             <button type="button" className="social-btn">
-              <span>◉</span>
+              <Globe size={18} strokeWidth={2.1} />
               Continue with GitHub
             </button>
             <button type="button" className="social-btn">
-              <span>G</span>
+              <Code2 size={18} strokeWidth={2.1} />
               Continue with Google
             </button>
           </div>
