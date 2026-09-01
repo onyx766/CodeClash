@@ -1,20 +1,36 @@
 'use client';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AtSign, Code2, EyeOff, Globe, Lock, Mail, Sparkles, Trophy, UserRound, Zap } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { ArrowRight, AtSign, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
+import SocialLoginButtons from '../../components/auth/SocialLoginButtons';
+
+const stats = [
+  { icon: '👥', label: '25K+ Developers', color: 'green' },
+  { icon: '⚡', label: 'Live Battles 24/7', color: 'purple' },
+  { icon: '🏆', label: 'Rank. Code. Win.', color: 'orange' },
+];
 
 export default function RegisterPage() {
   const { register } = useAuth();
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const router = useRouter();
 
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      alert('Passwords do not match');
+      return;
+    }
     try {
       await register(email, username, password);
       router.push('/lobby');
@@ -24,125 +40,163 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="auth-page-shell auth-page-shell--compact">
-      <div className="auth-left-panel">
-        <div className="auth-bracket">{`{`}</div>
+    <main className="auth-dark-page">
+      <div className="auth-dark-grid">
+        <div className="auth-dark-left">
+          <div className="auth-code-badge">{`{ } CODE. COMPETE. CONQUER.`}</div>
 
-        <div className="auth-tag">JOIN CODECLASH</div>
+          <h1 className="auth-dark-title">
+            Join the Arena, <span className="gradient-text">Challenger</span>
+          </h1>
 
-        <h1 className="auth-title auth-title--large">
-          Create your
-          <span>account</span>
-        </h1>
-
-        <p className="auth-subtitle auth-subtitle--small">
-          Join thousands of developers in real-time JavaScript battles.
-          Compete, learn, and climb the rankings.
-        </p>
-
-        <div className="feature-list">
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--blue"><Zap size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Real-time battles</div>
-              <div className="feature-text">Challenge developers in live 1v1 matches.</div>
-            </div>
-          </div>
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--purple"><Trophy size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Climb the leaderboard</div>
-              <div className="feature-text">Earn points and prove your skills.</div>
-            </div>
-          </div>
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--green"><Sparkles size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Sharpen your skills</div>
-              <div className="feature-text">Practice with real challenges and feedback.</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="auth-signup-link">
-          Already have an account? <a href="/login">Log in</a>
-        </div>
-      </div>
-
-      <div className="auth-card-wrap">
-        <div className="auth-card">
-          <h2>Create your account</h2>
-          <p>Enter your details to get started</p>
-
-          <form onSubmit={handle} className="auth-form">
-            <div className="two-col-fields">
-              <div className="field-group">
-                <label className="field-label">Full name</label>
-                <div className="input-shell">
-                  <span className="input-icon"><UserRound size={16} strokeWidth={2.2} /></span>
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
-                </div>
-              </div>
-
-              <div className="field-group">
-                <label className="field-label">Username</label>
-                <div className="input-shell input-shell--tight">
-                  <span className="input-icon"><AtSign size={16} strokeWidth={2.2} /></span>
-                  <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="johndoe" />
-                </div>
-              </div>
-            </div>
-
-            <label className="field-label">Email address</label>
-            <div className="input-shell">
-              <span className="input-icon"><Mail size={16} strokeWidth={2.2} /></span>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" />
-            </div>
-
-            <label className="field-label">Password</label>
-            <div className="input-shell">
-              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a strong password" type="password" />
-              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
-            </div>
-
-            <label className="field-label">Confirm password</label>
-            <div className="input-shell">
-              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
-              <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm your password" type="password" />
-              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
-            </div>
-
-            <div className="password-rules">
-              <span className="rule ok">✓ At least 8 characters</span>
-              <span className="rule ok">✓ One uppercase letter</span>
-              <span className="rule ok">✓ One number</span>
-            </div>
-
-            <button type="submit" className="primary-submit">
-              Create account
-            </button>
-          </form>
-
-          <div className="divider"><span>or continue with</span></div>
-
-          <div className="social-stack">
-            <button type="button" className="social-btn">
-              <Globe size={18} strokeWidth={2.1} />
-              Continue with GitHub
-            </button>
-            <button type="button" className="social-btn">
-              <Code2 size={18} strokeWidth={2.1} />
-              Continue with Google
-            </button>
-          </div>
-
-          <p className="terms-text">
-            By creating an account, you agree to our <a href="/terms">Terms of Service</a>
-            and <a href="/privacy">Privacy Policy</a>
+          <p className="auth-dark-subtitle">
+            Create your account and start coding battles, climb the leaderboard,
+            and join a community of developers worldwide.
           </p>
+
+          <div className="auth-stat-pills">
+            {stats.map((s) => (
+              <div key={s.label} className={`auth-stat-pill auth-stat-pill--${s.color}`}>
+                <span>{s.icon}</span>
+                <span>{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="auth-dark-visual">
+            <Image
+              src="/assets/login.png"
+              alt="Code editor with live match interface"
+              width={480}
+              height={360}
+              className="auth-visual-img"
+              priority
+            />
+          </div>
+        </div>
+
+        <div className="auth-dark-card-wrap">
+          <div className="auth-dark-card">
+            <div className="auth-card-logo">
+              <Image src="/assets/logo.png" alt="" width={40} height={40} aria-hidden="true" />
+            </div>
+            <h2>Create Account</h2>
+            <p>Start your coding journey. The arena awaits.</p>
+
+            <form onSubmit={handle} className="auth-form">
+              <label className="field-label" htmlFor="register-username">Username</label>
+              <div className="input-dark">
+                <UserRound size={16} strokeWidth={2.2} />
+                <input
+                  id="register-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="johndoe"
+                  required
+                />
+              </div>
+
+              <label className="field-label" htmlFor="register-email">Email Address</label>
+              <div className="input-dark">
+                <Mail size={16} strokeWidth={2.2} />
+                <input
+                  id="register-email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  type="email"
+                  required
+                />
+              </div>
+
+              <label className="field-label" htmlFor="register-password">Password</label>
+              <div className="input-dark">
+                <Lock size={16} strokeWidth={2.2} />
+                <input
+                  id="register-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a strong password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                />
+                <button
+                  type="button"
+                  className="input-icon-btn"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+              </div>
+
+              <label className="field-label" htmlFor="register-confirm">Confirm Password</label>
+              <div className="input-dark">
+                <Lock size={16} strokeWidth={2.2} />
+                <input
+                  id="register-confirm"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  type={showConfirm ? 'text' : 'password'}
+                  required
+                />
+                <button
+                  type="button"
+                  className="input-icon-btn"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirm ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+              </div>
+
+              <label className="remember-label agree-label">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  required
+                />
+                I agree to the <Link href="/terms">Terms of Service</Link> and{' '}
+                <Link href="/privacy">Privacy Policy</Link>
+              </label>
+
+              <button type="submit" className="btn-gradient btn-full">
+                Create Account
+                <ArrowRight size={18} strokeWidth={2.4} />
+              </button>
+            </form>
+
+            <div className="divider-dark">
+              <span>or continue with</span>
+            </div>
+
+            <SocialLoginButtons layout="row" />
+
+            <p className="auth-switch-text">
+              Already have an account? <Link href="/login">Log in</Link>
+            </p>
+          </div>
         </div>
       </div>
+
+      <div className="auth-features-bar auth-features-bar--3">
+        <div><span>🛡️</span><div><strong>Secure Signup</strong><span>Your data is encrypted and safe</span></div></div>
+        <div><span>⚡</span><div><strong>Real-Time Battles</strong><span>Compete in live coding duels</span></div></div>
+        <div><span>🌐</span><div><strong>Global Community</strong><span>Connect, learn, and grow together</span></div></div>
+      </div>
+
+      <footer className="auth-dark-footer">
+        <span>© 2024 CodeClash. All rights reserved.</span>
+        <div>
+          <Link href="/terms">Terms of Service</Link>
+          <span>·</span>
+          <Link href="/privacy">Privacy Policy</Link>
+          <span>·</span>
+          <Link href="/contact">Contact Us</Link>
+        </div>
+      </footer>
     </main>
   );
 }

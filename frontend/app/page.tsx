@@ -1,30 +1,22 @@
-import Hero from "../components/home/Hero";
-import Intro from "../components/home/Intro";
-import HowItWorks from "../components/home/HowItWorks";
-import Features from "../components/home/Features";
-import Stats from "../components/home/Stats";
-import FinalCta from "../components/home/FinalCta";
+import Hero from '../components/home/Hero';
+import HowItWorks from '../components/home/HowItWorks';
+import Features from '../components/home/Features';
+import Stats from '../components/home/Stats';
+import LeaderboardPreview from '../components/home/LeaderboardPreview';
+import CommunitySection from '../components/home/CommunitySection';
+import FinalCta from '../components/home/FinalCta';
 
-export default function Home(){
+export default function Home() {
   return (
-    <div>
+    <div className="landing-page">
       <Hero />
-      <Intro />
-      <main className="section">
-        <div className="cc-container">
-          <HowItWorks />
-        </div>
-      </main>
-      <section className="section">
-        <div className="cc-container">
-          <Features />
-        </div>
-      </section>
-      <section className="section">
-        <div className="cc-container">
-          <Stats />
-        </div>
-      </section>
+      <Stats />
+      <div className="cc-container">
+        <Features />
+        <LeaderboardPreview />
+        <HowItWorks />
+        <CommunitySection />
+      </div>
       <FinalCta />
     </div>
   );

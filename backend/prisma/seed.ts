@@ -1,79 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
-
-async function main() {
-  // create admin
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@codeclash.local';
-  const adminUser = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: {
-      email: adminEmail,
-      username: 'admin',
-      passwordHash: '$2b$10$abcdefghijklmnopqrstuv', // placeholder, use real hash in prod
-      role: 'ADMIN',
-    },
-  });
-
-  // create sample users
-  await prisma.user.upsert({ where: { email: 'alice@example.com' }, update: {}, create: { email: 'alice@example.com', username: 'alice', passwordHash: '$2b$10$alice', role: 'PLAYER' } });
-  await prisma.user.upsert({ where: { email: 'bob@example.com' }, update: {}, create: { email: 'bob@example.com', username: 'bob', passwordHash: '$2b$10$bob', role: 'PLAYER' } });
-
-  // sample challenges
-  const c1 = await prisma.challenge.upsert({
-    where: { title: 'Add One' },
-    update: {},
-    create: {
-      title: 'Add One',
-      description: 'Return input + 1',
-      difficulty: 'EASY',
-      starterCode: 'module.exports.solve = (x) => { /* implement */ }',
-      functionName: 'solve',
-      timeLimitSeconds: 2,
-      isPublished: true,
-      testCases: {
-        create: [
-          { input: '1', expectedOutput: '2', isHidden: false },
-          { input: '5', expectedOutput: '6', isHidden: false },
-          { input: '999', expectedOutput: '1000', isHidden: true },
-        ],
-      },
-    },
-  });
-
-  const c2 = await prisma.challenge.upsert({
-    where: { title: 'Square' },
-    update: {},
-    create: {
-      title: 'Square',
-      description: 'Return input squared',
-      difficulty: 'EASY',
-      starterCode: 'module.exports.solve = (x) => { /* implement */ }',
-      functionName: 'solve',
-      timeLimitSeconds: 2,
-      isPublished: true,
-      testCases: {
-        create: [
-          { input: '2', expectedOutput: '4', isHidden: false },
-          { input: '10', expectedOutput: '100', isHidden: false },
-        ],
-      },
-    },
-  });
-
-  console.log('Seed complete');
-}
-
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
-import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -92,7 +18,6 @@ async function main() {
     },
   });
 
-  // Create some player accounts
   for (let i = 1; i <= 5; i++) {
     await prisma.user.upsert({
       where: { email: `player${i}@codeclash.local` },
@@ -106,7 +31,6 @@ async function main() {
     });
   }
 
-  // Sample challenges
   const challenges = [
     {
       title: 'Sum of Array',
@@ -134,7 +58,6 @@ async function main() {
         { input: '"hello world"', expectedOutput: '"dlrow olleh"', isHidden: true },
       ],
     },
-    // more challenges...
   ];
 
   for (const c of challenges) {
@@ -162,12 +85,11 @@ async function main() {
     }
   }
 
-  console.log('Seed finished.');
+  console.log('Seed finished.', { admin: admin.email });
 }
 
 main()
   .catch((e) => {
-    // eslint-disable-next-line no-console
     console.error(e);
     process.exit(1);
   })
