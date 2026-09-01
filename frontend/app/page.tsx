@@ -3,20 +3,28 @@ import HowItWorks from '../components/home/HowItWorks';
 import Features from '../components/home/Features';
 import Stats from '../components/home/Stats';
 import LeaderboardPreview from '../components/home/LeaderboardPreview';
-import CommunitySection from '../components/home/CommunitySection';
 import FinalCta from '../components/home/FinalCta';
 
 export default function Home() {
   return (
-    <div className="landing-page">
+    <div>
       <Hero />
-      <Stats />
-      <div className="cc-container">
-        <Features />
-        <LeaderboardPreview />
-        <HowItWorks />
-        <CommunitySection />
-      </div>
+      <main className="section">
+        <div className="cc-container">
+          <HowItWorks />
+        </div>
+      </main>
+      <section className="section">
+        <div className="cc-container">
+          <Features />
+        </div>
+      </section>
+      <section className="section">
+        <div className="cc-container">
+          <Stats />
+        </div>
+      </section>
+      <LeaderboardPreview />
       <FinalCta />
     </div>
   );

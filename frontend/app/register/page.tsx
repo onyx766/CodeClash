@@ -1,202 +1,174 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import Link from 'next/link';
-import { ArrowRight, AtSign, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
-import useAuth from '../../hooks/useAuth';
-import SocialLoginButtons from '../../components/auth/SocialLoginButtons';
-
-const stats = [
-  { icon: '👥', label: '25K+ Developers', color: 'green' },
-  { icon: '⚡', label: 'Live Battles 24/7', color: 'purple' },
-  { icon: '🏆', label: 'Rank. Code. Win.', color: 'orange' },
-];
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
+import useAuth from "../../hooks/useAuth";
+import AuthLayout from "../../components/auth/AuthLayout";
+import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
 
 export default function RegisterPage() {
   const { register } = useAuth();
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const router = useRouter();
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [agreed, setAgreed] = useState(false);
-  const router = useRouter();
+  const [agreed, setAgreed] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      alert('Passwords do not match');
+    setError("");
+    if (password !== confirm) {
+      setError("Passwords do not match.");
       return;
     }
+    if (!agreed) {
+      setError("Please accept the Terms of Service and Privacy Policy.");
+      return;
+    }
+    setBusy(true);
     try {
       await register(email, username, password);
-      router.push('/lobby');
+      router.push("/lobby");
     } catch {
-      alert('Register failed');
+      setError("Registration failed. Try a different email or username.");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <main className="auth-dark-page">
-      <div className="auth-dark-grid">
-        <div className="auth-dark-left">
-          <div className="auth-code-badge">{`{ } CODE. COMPETE. CONQUER.`}</div>
+    <AuthLayout
+      title="Join the Arena"
+      highlight="Challenger"
+      subtitle="Create your account and start coding battles, climb the leaderboard, and join a community of developers worldwide."
+    >
+      <div className="card p-6 sm:p-7">
+        <AuthCardHeader title="Create Account" subtitle="Start your coding journey. The arena awaits." />
 
-          <h1 className="auth-dark-title">
-            Join the Arena, <span className="gradient-text">Challenger</span>
-          </h1>
-
-          <p className="auth-dark-subtitle">
-            Create your account and start coding battles, climb the leaderboard,
-            and join a community of developers worldwide.
-          </p>
-
-          <div className="auth-stat-pills">
-            {stats.map((s) => (
-              <div key={s.label} className={`auth-stat-pill auth-stat-pill--${s.color}`}>
-                <span>{s.icon}</span>
-                <span>{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="auth-dark-visual">
-            <Image
-              src="/assets/login.png"
-              alt="Code editor with live match interface"
-              width={480}
-              height={360}
-              className="auth-visual-img"
-              priority
-            />
-          </div>
-        </div>
-
-        <div className="auth-dark-card-wrap">
-          <div className="auth-dark-card">
-            <div className="auth-card-logo">
-              <Image src="/assets/logo.png" alt="" width={40} height={40} aria-hidden="true" />
+        <form onSubmit={handle} className="mt-6 space-y-3.5">
+          <div>
+            <label htmlFor="username" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Username
+            </label>
+            <div className="relative">
+              <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="username"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Choose a username"
+                className="field !pl-9"
+              />
             </div>
-            <h2>Create Account</h2>
-            <p>Start your coding journey. The arena awaits.</p>
+          </div>
 
-            <form onSubmit={handle} className="auth-form">
-              <label className="field-label" htmlFor="register-username">Username</label>
-              <div className="input-dark">
-                <UserRound size={16} strokeWidth={2.2} />
-                <input
-                  id="register-username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="johndoe"
-                  required
-                />
-              </div>
+          <div>
+            <label htmlFor="email" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="field !pl-9"
+              />
+            </div>
+          </div>
 
-              <label className="field-label" htmlFor="register-email">Email Address</label>
-              <div className="input-dark">
-                <Mail size={16} strokeWidth={2.2} />
-                <input
-                  id="register-email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  type="email"
-                  required
-                />
-              </div>
-
-              <label className="field-label" htmlFor="register-password">Password</label>
-              <div className="input-dark">
-                <Lock size={16} strokeWidth={2.2} />
-                <input
-                  id="register-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create a strong password"
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                />
-                <button
-                  type="button"
-                  className="input-icon-btn"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
-                </button>
-              </div>
-
-              <label className="field-label" htmlFor="register-confirm">Confirm Password</label>
-              <div className="input-dark">
-                <Lock size={16} strokeWidth={2.2} />
-                <input
-                  id="register-confirm"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm your password"
-                  type={showConfirm ? 'text' : 'password'}
-                  required
-                />
-                <button
-                  type="button"
-                  className="input-icon-btn"
-                  onClick={() => setShowConfirm((v) => !v)}
-                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
-                >
-                  {showConfirm ? <Eye size={16} /> : <EyeOff size={16} />}
-                </button>
-              </div>
-
-              <label className="remember-label agree-label">
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  required
-                />
-                I agree to the <Link href="/terms">Terms of Service</Link> and{' '}
-                <Link href="/privacy">Privacy Policy</Link>
-              </label>
-
-              <button type="submit" className="btn-gradient btn-full">
-                Create Account
-                <ArrowRight size={18} strokeWidth={2.4} />
+          <div>
+            <label htmlFor="password" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Password
+            </label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="field !pl-9 !pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dim transition-colors hover:text-fg"
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
-            </form>
-
-            <div className="divider-dark">
-              <span>or continue with</span>
             </div>
-
-            <SocialLoginButtons layout="row" />
-
-            <p className="auth-switch-text">
-              Already have an account? <Link href="/login">Log in</Link>
-            </p>
           </div>
-        </div>
-      </div>
 
-      <div className="auth-features-bar auth-features-bar--3">
-        <div><span>🛡️</span><div><strong>Secure Signup</strong><span>Your data is encrypted and safe</span></div></div>
-        <div><span>⚡</span><div><strong>Real-Time Battles</strong><span>Compete in live coding duels</span></div></div>
-        <div><span>🌐</span><div><strong>Global Community</strong><span>Connect, learn, and grow together</span></div></div>
-      </div>
+          <div>
+            <label htmlFor="confirm" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Confirm Password
+            </label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="confirm"
+                type={showConfirm ? "text" : "password"}
+                required
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Confirm your password"
+                className="field !pl-9 !pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showConfirm ? "Hide password" : "Show password"}
+                onClick={() => setShowConfirm((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dim transition-colors hover:text-fg"
+              >
+                {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
 
-      <footer className="auth-dark-footer">
-        <span>© 2024 CodeClash. All rights reserved.</span>
-        <div>
-          <Link href="/terms">Terms of Service</Link>
-          <span>·</span>
-          <Link href="/privacy">Privacy Policy</Link>
-          <span>·</span>
-          <Link href="/contact">Contact Us</Link>
-        </div>
-      </footer>
-    </main>
+          <label className="flex cursor-pointer items-start gap-2 pt-1 text-[12.5px] text-muted">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-blue)]"
+            />
+            <span>
+              I agree to the <span className="font-medium text-blue-400">Terms of Service</span> and <span className="font-medium text-blue-400">Privacy Policy</span>
+            </span>
+          </label>
+
+          {error && (
+            <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" disabled={busy} className="btn btn-grad w-full !py-3">
+            {busy ? "Creating account…" : "Create Account"} <ArrowRight size={15} />
+          </button>
+        </form>
+
+        <SocialAuth />
+
+        <p className="mt-5 text-center text-[12.5px] text-dim">
+          Already have an account? <Link href="/login" className="font-semibold text-blue-400 hover:underline">Log in</Link>
+        </p>
+      </div>
+    </AuthLayout>
   );
 }

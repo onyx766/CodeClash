@@ -1,49 +1,53 @@
-import { Code2, Signal, Trophy, Zap } from 'lucide-react';
+import { Code2, TrendingUp, Trophy, Zap } from "lucide-react";
+import { IconBadge } from "../ui/Bits";
+import SectionHeading from "./SectionHeading";
 
 const features = [
   {
     icon: Zap,
-    color: 'blue',
-    title: 'Real-Time Battles',
-    desc: 'Compete head-to-head in live coding duels with developers worldwide.',
+    tone: "violet",
+    title: "Real-Time Battles",
+    desc: "Compete head-to-head in real-time coding challenges with developers worldwide.",
   },
   {
     icon: Code2,
-    color: 'purple',
-    title: 'Smart Challenges',
-    desc: 'Curated problems from easy to expert, with hidden test cases.',
+    tone: "green",
+    title: "Diverse Challenges",
+    desc: "From easy warm-ups to hard algorithms. New challenges added every day.",
   },
   {
-    icon: Signal,
-    color: 'green',
-    title: 'Fair Matchmaking',
-    desc: 'ELO-based rating system pairs you with opponents of similar skill.',
+    icon: TrendingUp,
+    tone: "amber",
+    title: "Skill-Based Matchmaking",
+    desc: "Get matched with players of similar skill for fair and exciting battles.",
   },
   {
     icon: Trophy,
-    color: 'orange',
-    title: 'Global Leaderboard',
-    desc: 'Climb the ranks, earn badges, and prove you are the best coder.',
+    tone: "blue",
+    title: "Earn & Climb",
+    desc: "Earn points, unlock rewards, and climb the leaderboard to prove your skills.",
   },
-];
+] as const;
 
 export default function Features() {
   return (
-    <section id="features" className="landing-section landing-features">
-      <h2 className="landing-section-title">Built for Developers, by Developers</h2>
-      <div className="landing-features-grid">
-        {features.map((feature) => {
-          const Icon = feature.icon;
-          return (
-            <article key={feature.title} className="landing-feature-card">
-              <div className={`landing-feature-icon landing-feature-icon--${feature.color}`}>
-                <Icon size={22} strokeWidth={2} />
-              </div>
-              <h3>{feature.title}</h3>
-              <p>{feature.desc}</p>
-            </article>
-          );
-        })}
+    <section className="cc-container py-14">
+      <SectionHeading
+        eyebrow="Why CodeClash?"
+        title="Built for Developers, by Developers"
+        subtitle="Everything you need to improve, compete, and grow."
+      />
+
+      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {features.map((f) => (
+          <article key={f.title} className="card group p-5 transition-colors hover:border-blue/35">
+            <IconBadge tone={f.tone} size={44}>
+              <f.icon size={20} strokeWidth={2.1} />
+            </IconBadge>
+            <h3 className="mt-4 text-[15px] font-bold tracking-tight">{f.title}</h3>
+            <p className="mt-2.5 text-[13px] leading-relaxed text-dim">{f.desc}</p>
+          </article>
+        ))}
       </div>
     </section>
   );
