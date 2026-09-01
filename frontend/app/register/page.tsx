@@ -1,148 +1,182 @@
-'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AtSign, Code2, EyeOff, Globe, Lock, Mail, Sparkles, Trophy, UserRound, Zap } from 'lucide-react';
-import useAuth from '../../hooks/useAuth';
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
+import useAuth from "../../hooks/useAuth";
+import AuthLayout from "../../components/auth/AuthLayout";
+import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
 
 export default function RegisterPage() {
   const { register } = useAuth();
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const router = useRouter();
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [agreed, setAgreed] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (!agreed) {
+      setError("Please accept the Terms of Service and Privacy Policy.");
+      return;
+    }
+    setBusy(true);
     try {
       await register(email, username, password);
-      router.push('/lobby');
+      router.push("/lobby");
     } catch {
-      alert('Register failed');
+      setError("Registration failed. Try a different email or username.");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <main className="auth-page-shell auth-page-shell--compact">
-      <div className="auth-left-panel">
-        <div className="auth-bracket">{`{`}</div>
+    <AuthLayout
+      title="Join the Arena"
+      highlight="Challenger"
+      subtitle="Create your account and start coding battles, climb the leaderboard, and join a community of developers worldwide."
+    >
+      <div className="card p-6 sm:p-7">
+        <AuthCardHeader
+          title="Create Account"
+          subtitle="Start your coding journey. The arena awaits."
+        />
 
-        <div className="auth-tag">JOIN CODECLASH</div>
+        <form onSubmit={handle} className="mt-6 space-y-3.5">
+          <div>
+            <label htmlFor="username" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Username
+            </label>
+            <div className="relative">
+              <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="username"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Choose a username"
+                className="field !pl-9"
+              />
+            </div>
+          </div>
 
-        <h1 className="auth-title auth-title--large">
-          Create your
-          <span>account</span>
-        </h1>
+          <div>
+            <label htmlFor="email" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="field !pl-9"
+              />
+            </div>
+          </div>
 
-        <p className="auth-subtitle auth-subtitle--small">
-          Join thousands of developers in real-time JavaScript battles.
-          Compete, learn, and climb the rankings.
+          <div>
+            <label htmlFor="password" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Password
+            </label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="field !pl-9 !pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dim transition-colors hover:text-fg"
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="confirm" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Confirm Password
+            </label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+              <input
+                id="confirm"
+                type={showConfirm ? "text" : "password"}
+                required
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Confirm your password"
+                className="field !pl-9 !pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showConfirm ? "Hide password" : "Show password"}
+                onClick={() => setShowConfirm((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dim transition-colors hover:text-fg"
+              >
+                {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-2 pt-1 text-[12.5px] text-muted">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-blue)]"
+            />
+            <span>
+              I agree to the{" "}
+              <span className="font-medium text-blue-400">Terms of Service</span> and{" "}
+              <span className="font-medium text-blue-400">Privacy Policy</span>
+            </span>
+          </label>
+
+          {error && (
+            <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" disabled={busy} className="btn btn-grad w-full !py-3">
+            {busy ? "Creating account…" : "Create Account"} <ArrowRight size={15} />
+          </button>
+        </form>
+
+        <SocialAuth />
+
+        <p className="mt-5 text-center text-[12.5px] text-dim">
+          Already have an account?{" "}
+          <Link href="/login" className="font-semibold text-blue-400 hover:underline">
+            Log in
+          </Link>
         </p>
-
-        <div className="feature-list">
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--blue"><Zap size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Real-time battles</div>
-              <div className="feature-text">Challenge developers in live 1v1 matches.</div>
-            </div>
-          </div>
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--purple"><Trophy size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Climb the leaderboard</div>
-              <div className="feature-text">Earn points and prove your skills.</div>
-            </div>
-          </div>
-          <div className="feature-item">
-            <span className="feature-icon feature-icon--green"><Sparkles size={16} strokeWidth={2.2} /></span>
-            <div>
-              <div className="feature-title">Sharpen your skills</div>
-              <div className="feature-text">Practice with real challenges and feedback.</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="auth-signup-link">
-          Already have an account? <a href="/login">Log in</a>
-        </div>
       </div>
-
-      <div className="auth-card-wrap">
-        <div className="auth-card">
-          <h2>Create your account</h2>
-          <p>Enter your details to get started</p>
-
-          <form onSubmit={handle} className="auth-form">
-            <div className="two-col-fields">
-              <div className="field-group">
-                <label className="field-label">Full name</label>
-                <div className="input-shell">
-                  <span className="input-icon"><UserRound size={16} strokeWidth={2.2} /></span>
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
-                </div>
-              </div>
-
-              <div className="field-group">
-                <label className="field-label">Username</label>
-                <div className="input-shell input-shell--tight">
-                  <span className="input-icon"><AtSign size={16} strokeWidth={2.2} /></span>
-                  <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="johndoe" />
-                </div>
-              </div>
-            </div>
-
-            <label className="field-label">Email address</label>
-            <div className="input-shell">
-              <span className="input-icon"><Mail size={16} strokeWidth={2.2} /></span>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" />
-            </div>
-
-            <label className="field-label">Password</label>
-            <div className="input-shell">
-              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a strong password" type="password" />
-              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
-            </div>
-
-            <label className="field-label">Confirm password</label>
-            <div className="input-shell">
-              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
-              <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm your password" type="password" />
-              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
-            </div>
-
-            <div className="password-rules">
-              <span className="rule ok">✓ At least 8 characters</span>
-              <span className="rule ok">✓ One uppercase letter</span>
-              <span className="rule ok">✓ One number</span>
-            </div>
-
-            <button type="submit" className="primary-submit">
-              Create account
-            </button>
-          </form>
-
-          <div className="divider"><span>or continue with</span></div>
-
-          <div className="social-stack">
-            <button type="button" className="social-btn">
-              <Globe size={18} strokeWidth={2.1} />
-              Continue with GitHub
-            </button>
-            <button type="button" className="social-btn">
-              <Code2 size={18} strokeWidth={2.1} />
-              Continue with Google
-            </button>
-          </div>
-
-          <p className="terms-text">
-            By creating an account, you agree to our <a href="/terms">Terms of Service</a>
-            and <a href="/privacy">Privacy Policy</a>
-          </p>
-        </div>
-      </div>
-    </main>
+    </AuthLayout>
   );
 }
