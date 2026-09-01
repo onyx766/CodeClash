@@ -1,128 +1,126 @@
-'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Code2, EyeOff, Globe, Lock, Mail, Sparkles, Target, Trophy, Zap } from 'lucide-react';
-import useAuth from '../../hooks/useAuth';
+"use client";
 
-const featureHighlights = [
-  { icon: Zap, title: 'Real-time battles', text: 'Challenge developers in live 1v1 matches.' },
-  { icon: Trophy, title: 'Climb the leaderboard', text: 'Earn points and prove your skills.' },
-  { icon: Target, title: 'Sharpen your skills', text: 'Practice with real challenges and feedback.' },
-];
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
+import useAuth from "../../hooks/useAuth";
+import AuthLayout from "../../components/auth/AuthLayout";
+import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const handle = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setBusy(true);
     try {
       await login(email, password);
-      router.push('/lobby');
+      router.push("/lobby");
     } catch {
-      alert('Login failed');
+      setError("Login failed. Check your email and password.");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <main className="auth-page-shell">
-      <div className="auth-left-panel">
-        <div className="auth-bracket">{`{`}</div>
+    <AuthLayout
+      title="Welcome Back"
+      highlight="Challenger"
+      subtitle="Log in to continue your coding battles, climb the rankings, and join live matches with developers worldwide."
+    >
+      <div className="card p-6 sm:p-7">
+        <AuthCardHeader title="Log In" subtitle="Access your account and continue coding." />
 
-        <div className="auth-tag">WELCOME BACK</div>
-
-        <h1 className="auth-title">
-          Log in to
-          <span>CodeClash</span>
-        </h1>
-
-        <p className="auth-subtitle">
-          Compete in real-time JavaScript battles,
-          solve challenges, and climb the rankings.
-        </p>
-
-        <div className="feature-list">
-          {featureHighlights.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <div key={item.title} className="feature-item">
-                <span className="feature-icon">
-                  <Icon size={16} strokeWidth={2.2} />
-                </span>
-                <div>
-                  <div className="feature-title">{item.title}</div>
-                  <div className="feature-text">{item.text}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="auth-signup-link">
-          New to CodeClash? <a href="/register">Create an account</a>
-        </div>
-      </div>
-
-      <div className="auth-card-wrap">
-        <div className="auth-card">
-          <h2>Welcome back</h2>
-          <p>Enter your credentials to access your account</p>
-
-          <form onSubmit={handle} className="auth-form">
-            <label className="field-label">Email</label>
-            <div className="input-shell">
-              <span className="input-icon"><Mail size={16} strokeWidth={2.2} /></span>
+        <form onSubmit={handle} className="mt-6 space-y-4">
+          <div>
+            <label htmlFor="email" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
               <input
+                id="email"
+                type="email"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                type="email"
+                className="field !pl-9"
               />
             </div>
+          </div>
 
-            <label className="field-label">Password</label>
-            <div className="input-shell">
-              <span className="input-icon"><Lock size={16} strokeWidth={2.2} /></span>
+          <div>
+            <label htmlFor="password" className="mb-1.5 block text-[12px] font-semibold text-muted">
+              Password
+            </label>
+            <div className="relative">
+              <Lock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
               <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                type="password"
+                className="field !pl-9 !pr-10"
               />
-              <span className="input-icon right"><EyeOff size={16} strokeWidth={2.2} /></span>
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-dim transition-colors hover:text-fg"
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
             </div>
-
-            <div className="form-meta">
-              <a href="/forgot-password">Forgot password?</a>
-            </div>
-
-            <button type="submit" className="primary-submit">
-              Log in
-            </button>
-          </form>
-
-          <div className="divider"><span>or continue with</span></div>
-
-          <div className="social-stack">
-            <button type="button" className="social-btn">
-              <Globe size={18} strokeWidth={2.1} />
-              Continue with GitHub
-            </button>
-            <button type="button" className="social-btn">
-              <Code2 size={18} strokeWidth={2.1} />
-              Continue with Google
-            </button>
           </div>
 
-          <p className="terms-text">
-            By continuing, you agree to our <a href="/terms">Terms of Service</a>
-            and <a href="/privacy">Privacy Policy</a>
-          </p>
-        </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] text-muted">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="h-3.5 w-3.5 accent-[var(--color-blue)]"
+              />
+              Remember me
+            </label>
+            <Link href="/login" className="text-[12.5px] font-medium text-blue-400 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+
+          {error && (
+            <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" disabled={busy} className="btn btn-blue w-full !py-3">
+            {busy ? "Logging in…" : "Log In"} <ArrowRight size={15} />
+          </button>
+        </form>
+
+        <SocialAuth />
+
+        <p className="mt-5 text-center text-[12.5px] text-dim">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="font-semibold text-blue-400 hover:underline">
+            Sign up
+          </Link>
+        </p>
       </div>
-    </main>
+    </AuthLayout>
   );
 }

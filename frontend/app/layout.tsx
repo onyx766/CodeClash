@@ -1,36 +1,32 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { MantineProvider } from "@mantine/core";
-import "@mantine/core/styles.css";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { theme } from "../theme";
 import AppShell from "../components/AppShell";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono-code",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "CodeClash",
-  description: "Real-time JS coding challenge platform",
+  title: "CodeClash — Code. Compete. Conquer.",
+  description:
+    "Challenge developers worldwide in real-time JavaScript battles. Solve problems, earn points, and climb the leaderboard.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <MantineProvider theme={theme} defaultColorScheme="light">
-          <AppShell>{children}</AppShell>
-        </MantineProvider>
+      <body className="min-h-full">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
