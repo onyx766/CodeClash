@@ -1,10 +1,12 @@
-import * as bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash('password123', 10);
+  const passwordHash = await argon2.hash('password123', {
+    type: argon2.argon2id,
+  });
 
   const admin = await prisma.user.upsert({
     where: { email: 'admin@codeclash.local' },
@@ -55,7 +57,11 @@ async function main() {
       testCases: [
         { input: '"abc"', expectedOutput: '"cba"', isHidden: false },
         { input: '""', expectedOutput: '""', isHidden: false },
-        { input: '"hello world"', expectedOutput: '"dlrow olleh"', isHidden: true },
+        {
+          input: '"hello world"',
+          expectedOutput: '"dlrow olleh"',
+          isHidden: true,
+        },
       ],
     },
   ];

@@ -42,6 +42,7 @@ model User {
   wins         Int      @default(0)
   losses       Int      @default(0)
   createdAt    DateTime @default(now())
+  hostedRooms  Room[]   @relation("host")
   updatedAt    DateTime @updatedAt
 
   rooms        RoomPlayer[]
@@ -78,7 +79,7 @@ model ChallengeTestCase {
 model Room {
   id        String       @id @default(uuid())
   code      String       @unique
-  host      User         @relation(fields: [hostId], references: [id])
+  host      User         @relation("host", fields: [hostId], references: [id])
   hostId    String
   status    RoomStatus   @default(WAITING)
   maxPlayers Int         @default(2)
@@ -101,7 +102,7 @@ model RoomPlayer {
 model Match {
   id                 String     @id @default(uuid())
   room               Room       @relation(fields: [roomId], references: [id])
-  roomId             String
+  roomId             String     @unique
   status             MatchStatus @default(PENDING)
   currentRoundNumber Int        @default(0)
   totalRounds        Int        @default(3)

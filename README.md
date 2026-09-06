@@ -1,6 +1,46 @@
 # CodeClash
 This is project about JS testing system, this is related with AI, 
 
+## Authentication (local dev)
+
+The backend (`backend/`, NestJS + Prisma + PostgreSQL) exposes a cookie-based auth system under `/api/auth`:
+
+- `POST /api/auth/register` — create an account (Argon2id password hashing, 201 on success)
+- `POST /api/auth/login` — log in (generic error on bad credentials, no account enumeration)
+- `POST /api/auth/refresh` — rotate the access token using the refresh cookie
+- `POST /api/auth/logout` — clear the auth cookies
+- `GET /api/auth/me` — return the current authenticated user (401 if not authenticated)
+
+Access/refresh tokens are short-lived JWTs delivered as `httpOnly`, `SameSite=lax` cookies (never exposed to frontend JS). Configure these environment variables (see `.env.example`):
+
+```env
+JWT_ACCESS_SECRET=   # long random string, e.g. `openssl rand -base64 48`
+JWT_REFRESH_SECRET=  # a DIFFERENT long random string
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+FRONTEND_URL=http://localhost:3000
+```
+
+Setup:
+
+```bash
+cd backend
+npm install
+cp ../.env.example .env   # then fill in real secrets/DATABASE_URL for local dev
+npx prisma generate
+npx prisma migrate dev    # applies the schema (creates prisma/migrations on first run)
+npm run start:dev
+```
+
+The frontend must call these endpoints with `credentials: "include"` so the browser sends/receives the auth cookies. Login/register requests are rate-limited (5–10 requests/minute per IP) via `@nestjs/throttler`.
+
+Run the auth test suite with:
+
+```bash
+cd backend
+npm test -- src/modules/auth
+```
+
 ## Docker secret for runner (local dev)
 
 The code runner and worker use an HMAC secret to sign job result POSTs. For local development we rely on a Docker secret named `runner_secret`.

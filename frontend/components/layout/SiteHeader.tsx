@@ -58,7 +58,9 @@ export default function SiteHeader({
                 className="relative hidden h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-fg sm:inline-flex"
               >
                 <Bell size={18} strokeWidth={2} />
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose ring-2 ring-surface" />
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose text-[9.5px] font-bold text-white ring-2 ring-surface">
+                  2
+                </span>
               </button>
 
               <button
