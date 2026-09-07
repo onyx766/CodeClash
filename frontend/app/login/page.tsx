@@ -8,6 +8,12 @@ import AuthLayout from "../../components/auth/AuthLayout";
 import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
 import useAuth from "../../hooks/useAuth";
 
+function getNextPath(): string {
+  if (typeof window === "undefined") return "/lobby";
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") ? next : "/lobby";
+}
+
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
@@ -24,7 +30,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push("/lobby");
+      router.push(getNextPath());
     } catch {
       setError("Login failed. Check your email and password.");
     } finally {

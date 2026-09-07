@@ -7,6 +7,7 @@ import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import useAuth from "../../hooks/useAuth";
 import AuthLayout from "../../components/auth/AuthLayout";
 import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
+import { ApiError } from "../../lib/api";
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -36,8 +37,12 @@ export default function RegisterPage() {
     try {
       await register(email, username, password);
       router.push("/lobby");
-    } catch {
-      setError("Registration failed. Try a different email or username.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status < 500) {
+        setError(err.message);
+      } else {
+        setError("Registration failed. Please try again.");
+      }
     } finally {
       setBusy(false);
     }

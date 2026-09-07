@@ -1,35 +1,50 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
-function buildHeaders(isJson = true) {
-  const headers: Record<string, string> = {};
-  if (isJson) headers['Content-Type'] = 'application/json';
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+type ApiErrorBody = { success?: false; error?: { code?: string; message?: string } };
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
   }
-  return headers;
 }
 
-async function request(method: string, path: string, body?: any) {
+async function request(method: string, path: string, body?: unknown) {
   const url = path.startsWith('http') ? path : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-  const opts: any = { method, headers: buildHeaders(body !== undefined) };
-  if (body !== undefined) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  if (!res.ok) {
-    const text = await res.text();
-    const err: any = new Error(`API ${res.status} ${res.statusText}: ${text}`);
-    err.status = res.status;
-    throw err;
-  }
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    credentials: 'include',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
   const ct = res.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return res.json();
-  return res.text();
+  const isJson = ct.includes('application/json');
+  const payload = isJson ? await res.json().catch(() => null) : await res.text();
+
+  if (!res.ok) {
+    const errBody = (isJson ? (payload as ApiErrorBody) : null) ?? {};
+    const message = errBody.error?.message || `API ${res.status} ${res.statusText}`;
+    throw new ApiError(res.status, message, errBody.error?.code);
+  }
+
+  return payload;
 }
 
 export const auth = {
   login: (email: string, password: string) => request('POST', '/auth/login', { email, password }),
-  register: (email: string, username: string, password: string) => request('POST', '/auth/register', { email, username, password }),
+  register: (email: string, username: string, password: string) =>
+    request('POST', '/auth/register', { email, username, password }),
   me: () => request('GET', '/auth/me'),
+  logout: () => request('POST', '/auth/logout'),
+  refresh: () => request('POST', '/auth/refresh'),
 };
 
 export const rooms = {

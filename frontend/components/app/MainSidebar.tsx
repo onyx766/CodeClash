@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Flame, Gem, LayoutGrid, Swords, Trophy, Users } from "lucide-react";
+import { BarChart3, Flame, Gem, LayoutGrid, Swords, Trophy, User, Users } from "lucide-react";
 import { SideNav, type SideItem } from "../layout/AppLayout";
 import { currentUser } from "../../lib/demo";
 
@@ -9,6 +9,7 @@ const items: SideItem[] = [
   { href: "/leaderboard", label: "Leaderboard", icon: BarChart3 },
   { href: "/how-it-works", label: "How It Works", icon: Trophy },
   { href: "/community", label: "Community", icon: Users },
+  { href: "/profile", label: "Profile", icon: User },
 ];
 
 function Sparkline() {
