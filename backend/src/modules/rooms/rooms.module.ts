@@ -8,5 +8,6 @@ import { RedisModule } from '../../redis/redis.module';
   imports: [DatabaseModule, RedisModule],
   providers: [RoomsService],
   controllers: [RoomsController],
+  exports: [RoomsService],
 })
 export class RoomsModule {}

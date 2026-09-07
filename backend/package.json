@@ -11,6 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init --preview-feature",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "create-master": "ts-node scripts/create-master.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

@@ -8,6 +8,20 @@ async function main() {
     type: argon2.argon2id,
   });
 
+  const master = await prisma.user.upsert({
+    where: { email: 'master@codeclash.local' },
+    update: {},
+    create: {
+      email: 'master@codeclash.local',
+      username: 'master',
+      passwordHash,
+      role: 'MASTER',
+      profile: { create: {} },
+      stats: { create: { rating: 1800 } },
+      preferences: { create: {} },
+    },
+  });
+
   const admin = await prisma.user.upsert({
     where: { email: 'admin@codeclash.local' },
     update: {},
@@ -16,7 +30,9 @@ async function main() {
       username: 'admin',
       passwordHash,
       role: 'ADMIN',
-      rating: 1500,
+      profile: { create: {} },
+      stats: { create: { rating: 1500 } },
+      preferences: { create: {} },
     },
   });
 
@@ -28,7 +44,10 @@ async function main() {
         email: `player${i}@codeclash.local`,
         username: `player${i}`,
         passwordHash,
-        role: 'PLAYER',
+        role: 'USER',
+        profile: { create: {} },
+        stats: { create: {} },
+        preferences: { create: {} },
       },
     });
   }
@@ -91,7 +110,7 @@ async function main() {
     }
   }
 
-  console.log('Seed finished.', { admin: admin.email });
+  console.log('Seed finished.', { master: master.email, admin: admin.email });
 }
 
 main()

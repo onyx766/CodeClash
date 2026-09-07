@@ -52,6 +52,14 @@ export const rooms = {
   create: (maxPlayers = 2) => request('POST', '/rooms', { maxPlayers }),
   join: (code: string) => request('POST', '/rooms/join', { code }),
   get: (id: string) => request('GET', `/rooms/${id}`),
+  invite: (roomId: string, username: string) =>
+    request('POST', `/rooms/${roomId}/invite`, { username }),
+};
+
+export const invitations = {
+  mine: () => request('GET', '/invitations/me'),
+  accept: (id: string) => request('POST', `/invitations/${id}/accept`),
+  decline: (id: string) => request('POST', `/invitations/${id}/decline`),
 };
 
 export const matches = {

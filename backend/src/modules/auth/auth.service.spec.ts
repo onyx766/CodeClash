@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { GeolocationService } from '../geolocation/geolocation.service';
 import {
   EmailAlreadyExistsException,
   InvalidCredentialsException,
@@ -16,15 +17,21 @@ describe('AuthService', () => {
   let usersService: jest.Mocked<
     Pick<
       UsersService,
-      'findByEmail' | 'findByEmailOrUsername' | 'create' | 'findById'
+      | 'findByEmail'
+      | 'findByEmailOrUsername'
+      | 'create'
+      | 'findById'
+      | 'updateLocation'
     >
   >;
+  let geolocationService: jest.Mocked<Pick<GeolocationService, 'getLocationFromIp'>>;
+  let configValues: Record<string, string>;
 
   const baseUser = {
     id: 'user-1',
     username: 'kevin',
     email: 'kevin@example.com',
-    role: Role.PLAYER,
+    role: Role.USER,
     createdAt: new Date('2024-01-01T00:00:00.000Z'),
   };
 
@@ -34,25 +41,29 @@ describe('AuthService', () => {
       findByEmailOrUsername: jest.fn(),
       create: jest.fn(),
       findById: jest.fn(),
+      updateLocation: jest.fn(),
+    };
+    geolocationService = {
+      getLocationFromIp: jest.fn(),
+    };
+    configValues = {
+      JWT_ACCESS_SECRET: 'test-access-secret',
+      JWT_REFRESH_SECRET: 'test-refresh-secret',
+      JWT_ACCESS_EXPIRES_IN: '15m',
+      JWT_REFRESH_EXPIRES_IN: '7d',
+      NODE_ENV: 'test',
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: UsersService, useValue: usersService },
+        { provide: GeolocationService, useValue: geolocationService },
         JwtService,
         {
           provide: ConfigService,
           useValue: {
-            get: (key: string) => {
-              const values: Record<string, string> = {
-                JWT_ACCESS_SECRET: 'test-access-secret',
-                JWT_REFRESH_SECRET: 'test-refresh-secret',
-                JWT_ACCESS_EXPIRES_IN: '15m',
-                JWT_REFRESH_EXPIRES_IN: '7d',
-              };
-              return values[key];
-            },
+            get: (key: string) => configValues[key],
           },
         },
       ],
@@ -201,6 +212,196 @@ describe('AuthService', () => {
       );
 
       await expect(service.refresh(tokens.accessToken)).rejects.toThrow();
+    });
+  });
+
+  describe('geolocation enrichment', () => {
+    it('stores location on registration when the provider succeeds for a public IP', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+      geolocationService.getLocationFromIp.mockResolvedValue({
+        country: 'United States',
+        region: 'California',
+        city: 'San Francisco',
+        timezone: 'America/Los_Angeles',
+      });
+
+      await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        '203.0.113.5',
+      );
+
+      expect(geolocationService.getLocationFromIp).toHaveBeenCalledWith(
+        '203.0.113.5',
+      );
+      expect(usersService.updateLocation).toHaveBeenCalledWith(baseUser.id, {
+        country: 'United States',
+        region: 'California',
+        city: 'San Francisco',
+        timezone: 'America/Los_Angeles',
+      });
+    });
+
+    it('still succeeds registration when the geolocation provider fails', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+      geolocationService.getLocationFromIp.mockRejectedValue(
+        new Error('provider down'),
+      );
+
+      const result = await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        '203.0.113.5',
+      );
+
+      expect(result.user.id).toBe(baseUser.id);
+      expect(usersService.updateLocation).not.toHaveBeenCalled();
+    });
+
+    it('updates location on a successful login', async () => {
+      const passwordHash = await hashPassword('securePassword123');
+      usersService.findByEmail.mockResolvedValue({
+        ...baseUser,
+        passwordHash,
+      } as never);
+      geolocationService.getLocationFromIp.mockResolvedValue({
+        country: 'United States',
+        region: 'California',
+        city: 'San Francisco',
+        timezone: 'America/Los_Angeles',
+      });
+
+      await service.login(
+        'kevin@example.com',
+        'securePassword123',
+        '203.0.113.5',
+      );
+
+      expect(usersService.updateLocation).toHaveBeenCalledWith(
+        baseUser.id,
+        expect.objectContaining({ country: 'United States' }),
+      );
+    });
+
+    it('does not call the geolocation provider for a failed login', async () => {
+      const passwordHash = await hashPassword('securePassword123');
+      usersService.findByEmail.mockResolvedValue({
+        ...baseUser,
+        passwordHash,
+      } as never);
+
+      await expect(
+        service.login('kevin@example.com', 'wrong-password', '203.0.113.5'),
+      ).rejects.toBeInstanceOf(InvalidCredentialsException);
+
+      expect(geolocationService.getLocationFromIp).not.toHaveBeenCalled();
+    });
+
+    it('skips the provider entirely for a localhost IP', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+
+      await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        '127.0.0.1',
+      );
+
+      expect(geolocationService.getLocationFromIp).not.toHaveBeenCalled();
+      expect(usersService.updateLocation).not.toHaveBeenCalled();
+    });
+
+    it('skips the provider entirely for a private network IP', async () => {
+      usersService.findByEmail.mockResolvedValue({
+        ...baseUser,
+        passwordHash: await hashPassword('securePassword123'),
+      } as never);
+
+      await service.login(
+        'kevin@example.com',
+        'securePassword123',
+        '192.168.1.20',
+      );
+
+      expect(geolocationService.getLocationFromIp).not.toHaveBeenCalled();
+      expect(usersService.updateLocation).not.toHaveBeenCalled();
+    });
+
+    it('uses GEOLOCATION_DEV_IP outside production when the real IP is local', async () => {
+      configValues.GEOLOCATION_DEV_IP = '8.8.8.8';
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+      geolocationService.getLocationFromIp.mockResolvedValue({
+        country: 'United States',
+        region: null,
+        city: null,
+        timezone: null,
+      });
+
+      await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        '127.0.0.1',
+      );
+
+      expect(geolocationService.getLocationFromIp).toHaveBeenCalledWith(
+        '8.8.8.8',
+      );
+    });
+
+    it('ignores GEOLOCATION_DEV_IP in production', async () => {
+      configValues.NODE_ENV = 'production';
+      configValues.GEOLOCATION_DEV_IP = '8.8.8.8';
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+
+      await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        '127.0.0.1',
+      );
+
+      expect(geolocationService.getLocationFromIp).not.toHaveBeenCalled();
+    });
+
+    it('does not fail registration when no IP is available at all', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({
+        ...baseUser,
+        passwordHash: 'hashed',
+      } as never);
+
+      const result = await service.register(
+        'kevin@example.com',
+        'kevin',
+        'securePassword123',
+        null,
+      );
+
+      expect(result.user.id).toBe(baseUser.id);
+      expect(geolocationService.getLocationFromIp).not.toHaveBeenCalled();
     });
   });
 });

@@ -8,8 +8,9 @@ datasource db {
 }
 
 enum Role {
-  PLAYER
+  USER
   ADMIN
+  MASTER
 }
 
 enum Difficulty {
@@ -25,10 +26,32 @@ enum RoomStatus {
   FINISHED
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
 enum MatchStatus {
   PENDING
   IN_PROGRESS
   FINISHED
+  CANCELLED
+  ABANDONED
+  EXPIRED
+}
+
+enum MatchType {
+  QUICK_MATCH
+  PRIVATE_ROOM
+  // PRIVATE_RANKED reserved for future use - not implemented yet.
+}
+
+enum MatchRiskStatus {
+  NORMAL
+  SUSPICIOUS
+  BLOCKED
 }
 
 model User {
@@ -36,87 +59,184 @@ model User {
   email        String   @unique
   username     String   @unique
   passwordHash String
-  role         Role     @default(PLAYER)
-  rating       Int      @default(1200)
-  totalScore   Int      @default(0)
-  wins         Int      @default(0)
-  losses       Int      @default(0)
+  role         Role     @default(USER)
   createdAt    DateTime @default(now())
   hostedRooms  Room[]   @relation("host")
   updatedAt    DateTime @updatedAt
 
-  rooms        RoomPlayer[]
-  submissions  Submission[]
+  // Approximate location derived from IP geolocation at registration/login.
+  // Best-effort and may be null - never treat as precise or authoritative.
+  country  String?
+  region   String?
+  city     String?
+  timezone String?
+
+  rooms       RoomPlayer[]
+  submissions Submission[]
   // matches as winner relation
-  wonMatches   Match[]  @relation("winner")
+  wonMatches  Match[]      @relation("winner")
+
+  sentInvitations     RoomInvitation[] @relation("invitationInviter")
+  receivedInvitations RoomInvitation[] @relation("invitationInvitee")
+
+  profile       UserProfile?
+  stats         UserStats?
+  preferences   UserPreference?
+  ratingHistory RatingHistory[]
+}
+
+model UserProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  displayName String?
+  bio         String?
+  avatarUrl   String?
+  location    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserStats {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  // Ranked stats - only ever touched by rating-eligible (Quick Match) results.
+  rating           Int @default(1200)
+  wins             Int @default(0)
+  losses           Int @default(0)
+  totalScore       Int @default(0)
+  bestStreak       Int @default(0)
+  currentStreak    Int @default(0)
+  matchesPlayed    Int @default(0)
+  challengesSolved Int @default(0)
+  coins            Int @default(0)
+  xp               Int @default(0)
+
+  // Casual stats - private room (PRIVATE_ROOM) results only. Never affects rating.
+  casualWins          Int @default(0)
+  casualLosses        Int @default(0)
+  casualMatchesPlayed Int @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserPreference {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  favoriteLanguages String[] @default([])
+  favoriteTopics    String[] @default([])
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Challenge {
-  id              String               @id @default(uuid())
-  title           String
-  description     String
-  difficulty      Difficulty           @default(EASY)
-  starterCode     String
-  functionName    String
-  timeLimitSeconds Int                 @default(300)
-  isPublished     Boolean              @default(false)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id               String     @id @default(uuid())
+  title            String
+  description      String
+  difficulty       Difficulty @default(EASY)
+  starterCode      String
+  functionName     String
+  timeLimitSeconds Int        @default(300)
+  isPublished      Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
-  testCases       ChallengeTestCase[]
-  rounds          Round[]
+  testCases ChallengeTestCase[]
+  rounds    Round[]
 }
 
 model ChallengeTestCase {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   challenge      Challenge @relation(fields: [challengeId], references: [id])
   challengeId    String
   input          String
   expectedOutput String
-  isHidden       Boolean  @default(false)
+  isHidden       Boolean   @default(false)
 }
 
 model Room {
-  id        String       @id @default(uuid())
-  code      String       @unique
-  host      User         @relation("host", fields: [hostId], references: [id])
-  hostId    String
-  status    RoomStatus   @default(WAITING)
-  maxPlayers Int         @default(2)
-  createdAt DateTime     @default(now())
+  id         String     @id @default(uuid())
+  code       String     @unique
+  host       User       @relation("host", fields: [hostId], references: [id])
+  hostId     String
+  status     RoomStatus @default(WAITING)
+  maxPlayers Int        @default(2)
+  createdAt  DateTime   @default(now())
 
-  players   RoomPlayer[]
-  match     Match?
+  players     RoomPlayer[]
+  match       Match?
+  invitations RoomInvitation[]
+}
+
+model RoomInvitation {
+  id     String @id @default(uuid())
+  room   Room   @relation(fields: [roomId], references: [id])
+  roomId String
+
+  inviter   User   @relation("invitationInviter", fields: [inviterId], references: [id])
+  inviterId String
+  invitee   User   @relation("invitationInvitee", fields: [inviteeId], references: [id])
+  inviteeId String
+
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  @@index([inviteeId, status])
+  @@index([roomId, inviteeId, status])
 }
 
 model RoomPlayer {
-  id       String  @id @default(uuid())
-  room     Room    @relation(fields: [roomId], references: [id])
+  id       String   @id @default(uuid())
+  room     Room     @relation(fields: [roomId], references: [id])
   roomId   String
-  user     User    @relation(fields: [userId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
   userId   String
-  isReady  Boolean @default(false)
+  isReady  Boolean  @default(false)
   joinedAt DateTime @default(now())
 }
 
 model Match {
-  id                 String     @id @default(uuid())
-  room               Room       @relation(fields: [roomId], references: [id])
-  roomId             String     @unique
+  id                 String      @id @default(uuid())
+  room               Room        @relation(fields: [roomId], references: [id])
+  roomId             String      @unique
   status             MatchStatus @default(PENDING)
-  currentRoundNumber Int        @default(0)
-  totalRounds        Int        @default(3)
-  winnerId           String?    
-  winner             User?      @relation("winner", fields: [winnerId], references: [id])
+  currentRoundNumber Int         @default(0)
+  totalRounds        Int         @default(3)
+  winnerId           String?
+  winner             User?       @relation("winner", fields: [winnerId], references: [id])
   startedAt          DateTime?
   finishedAt         DateTime?
 
-  rounds             Round[]
+  // Anti-rigging: server-determined match type and rating eligibility. Never
+  // settable by client input - see RoomsService/MatchesService/RatingService.
+  type              MatchType @default(PRIVATE_ROOM)
+  ratingEligible    Boolean   @default(false)
+  ratingReason      String?
+  ratingProcessedAt DateTime?
+
+  // Future anti-cheat risk model placeholders - unused for now, never written to.
+  riskScore  Int?
+  riskStatus MatchRiskStatus?
+
+  rounds        Round[]
+  ratingHistory RatingHistory[]
 }
 
 model Round {
-  id          String   @id @default(uuid())
-  match       Match    @relation(fields: [matchId], references: [id])
+  id          String    @id @default(uuid())
+  match       Match     @relation(fields: [matchId], references: [id])
   matchId     String
   challenge   Challenge @relation(fields: [challengeId], references: [id])
   challengeId String
@@ -129,26 +249,46 @@ model Round {
 }
 
 model Submission {
-  id         String   @id @default(uuid())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     String
-  round      Round    @relation(fields: [roundId], references: [id])
-  roundId    String
-  code       String   @db.Text
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  round       Round    @relation(fields: [roundId], references: [id])
+  roundId     String
+  code        String   @db.Text
   passedTests Int
-  totalTests Int
-  runtimeMs  Int
-  score      Int
+  totalTests  Int
+  runtimeMs   Int
+  score       Int
   submittedAt DateTime @default(now())
 }
 
+// Only ever populated for ratingEligible matches - see RatingService. Private
+// room (casual) results never create rows here.
+model RatingHistory {
+  id String @id @default(uuid())
+
+  userId  String
+  matchId String
+  user    User   @relation(fields: [userId], references: [id])
+  match   Match  @relation(fields: [matchId], references: [id])
+
+  previousRating Int
+  newRating      Int
+  change         Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, matchId])
+  @@index([userId, createdAt])
+}
+
 model Job {
-  id         String   @id
-  createdAt  DateTime @default(now())
-  metadata   Json?
-  status     String   @default("ENQUEUED")
-  exitCode   Int?
-  results    JobResult[]
+  id        String      @id
+  createdAt DateTime    @default(now())
+  metadata  Json?
+  status    String      @default("ENQUEUED")
+  exitCode  Int?
+  results   JobResult[]
 }
 
 model JobResult {

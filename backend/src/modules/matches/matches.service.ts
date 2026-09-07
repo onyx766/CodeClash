@@ -44,8 +44,20 @@ export class MatchesService {
       }
     }
 
+    // Every match today originates from a host-created, code-joined room, i.e.
+    // a private room. Hardcoded server-side - never derived from client input -
+    // so a private room can never become rating-eligible by accident or by a
+    // forged request body. See RatingService for the independent enforcement
+    // of this rule at rating-application time.
     const match = await this.prisma.match.create({
-      data: { roomId, status: 'IN_PROGRESS', totalRounds },
+      data: {
+        roomId,
+        status: 'IN_PROGRESS',
+        totalRounds,
+        type: 'PRIVATE_ROOM',
+        ratingEligible: false,
+        ratingReason: 'PRIVATE_ROOM_CASUAL',
+      },
     });
 
     const rounds: any[] = [];

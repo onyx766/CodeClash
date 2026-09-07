@@ -15,6 +15,10 @@ function mockResponse(): jest.Mocked<Response> {
   } as unknown as jest.Mocked<Response>;
 }
 
+function mockRequest(ip = '203.0.113.5'): Request {
+  return { ip, socket: { remoteAddress: ip } } as unknown as Request;
+}
+
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: jest.Mocked<
@@ -64,12 +68,37 @@ describe('AuthController', () => {
         username: 'kevin',
         password: 'securePassword123',
       },
+      mockRequest(),
       res,
     );
 
     expect(res.cookie).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ success: true, user: safeUser });
     expect(JSON.stringify(result)).not.toContain('passwordHash');
+  });
+
+  it('register forwards the detected client IP to the auth service', async () => {
+    authService.register.mockResolvedValue({
+      user: safeUser,
+      tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    });
+
+    await controller.register(
+      {
+        email: 'kevin@example.com',
+        username: 'kevin',
+        password: 'securePassword123',
+      },
+      mockRequest('198.51.100.9'),
+      mockResponse(),
+    );
+
+    expect(authService.register).toHaveBeenCalledWith(
+      'kevin@example.com',
+      'kevin',
+      'securePassword123',
+      '198.51.100.9',
+    );
   });
 
   it('login sets auth cookies and returns the safe user', async () => {
@@ -81,6 +110,7 @@ describe('AuthController', () => {
 
     const result = await controller.login(
       { email: 'kevin@example.com', password: 'securePassword123' },
+      mockRequest(),
       res,
     );
 
@@ -97,7 +127,7 @@ describe('AuthController', () => {
   });
 
   it('me returns the authenticated user attached by the guard', () => {
-    const user: AuthenticatedUser = { ...safeUser, role: Role.PLAYER };
+    const user: AuthenticatedUser = { ...safeUser, role: Role.USER };
     const req = { user } as unknown as Parameters<typeof controller.me>[0];
 
     const result = controller.me(req);
@@ -127,7 +157,7 @@ describe('JwtAuthGuard', () => {
       id: 'user-1',
       username: 'kevin',
       email: 'kevin@example.com',
-      role: Role.PLAYER,
+      role: Role.USER,
       createdAt: new Date(),
     };
     expect(guard.handleRequest(null, user)).toEqual(user);

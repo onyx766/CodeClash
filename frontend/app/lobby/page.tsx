@@ -1,113 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  LogIn,
-  Lock,
-  PlayCircle,
-  Plus,
-  RefreshCw,
-  Users,
-  Zap,
-} from "lucide-react";
-import { rooms as roomsApi } from "../../lib/api";
+import { LogIn, PlayCircle, Plus, Users, Zap } from "lucide-react";
+import { ApiError, rooms as roomsApi } from "../../lib/api";
 import AppLayout from "../../components/layout/AppLayout";
 import DashboardSidebar from "../../components/app/DashboardSidebar";
 import LobbyRail from "../../components/app/LobbyRail";
-import { Avatar } from "../../components/ui/Bits";
-import { activeRooms as demoRooms } from "../../lib/demo";
-
-type ApiRoom = {
-  id: string;
-  code: string;
-  maxPlayers?: number;
-  players?: unknown[];
-  host?: { username?: string } | null;
-};
-
-type RoomRow = {
-  id?: string;
-  code: string;
-  host: string;
-  avatar: string;
-  players: number;
-  max: number;
-  level: string;
-  req: string;
-};
-
-async function fetchRooms(): Promise<RoomRow[] | null> {
-  try {
-    const list: ApiRoom[] = await roomsApi.list();
-    if (!Array.isArray(list) || !list.length) return null;
-    return list.map((r, i) => ({
-      id: r.id,
-      code: r.code,
-      host: r.host?.username ?? "Unknown",
-      avatar: demoRooms[i % demoRooms.length].avatar,
-      players: r.players?.length ?? 0,
-      max: r.maxPlayers ?? 2,
-      level: "All Levels",
-      req: "Any Level",
-    }));
-  } catch {
-    return null;
-  }
-}
-
-const fallbackRooms: RoomRow[] = demoRooms.map((r) => ({
-  code: r.code,
-  host: r.host,
-  avatar: r.avatar,
-  players: r.players,
-  max: r.max,
-  level: r.level,
-  req: r.req,
-}));
+import CreateRoomModal, { type CreateRoomOptions } from "../../components/app/CreateRoomModal";
+import MyInvitations from "../../components/app/MyInvitations";
 
 export default function LobbyPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<RoomRow[]>(fallbackRooms);
-  const [live, setLive] = useState(false);
   const [code, setCode] = useState("");
   const [joinOpen, setJoinOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchRooms().then((next) => {
-      if (!cancelled && next) {
-        setRows(next);
-        setLive(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const refresh = () => {
-    setRefreshing(true);
-    fetchRooms().then((next) => {
-      if (next) {
-        setRows(next);
-        setLive(true);
-      }
-      setRefreshing(false);
-    });
-  };
 
   const create = async () => {
     setError("");
     try {
       const r = await roomsApi.create(2);
       router.push(`/rooms/${r.id}`);
-    } catch {
-      setError("Could not create a room. Is the backend running?");
+    } catch (e) {
+      setError(
+        e instanceof ApiError ? e.message : "Could not create a room. Is the backend running?",
+      );
     }
+  };
+
+  const createWithOptions = async ({ maxPlayers }: CreateRoomOptions) => {
+    const r = await roomsApi.create(maxPlayers);
+    setCreateOpen(false);
+    router.push(`/rooms/${r.id}`);
   };
 
   const join = async (roomCode: string) => {
@@ -148,7 +74,7 @@ export default function LobbyPage() {
       desc: "Create a private room and invite your friends.",
       cta: "Create Room",
       btn: "btn-violet",
-      onClick: create,
+      onClick: () => setCreateOpen(true),
       ring: "from-[#1a1140] to-[#0b1020] border-violet/30",
       badge: "from-violet to-violet-deep",
       ctaIcon: Plus,
@@ -179,6 +105,12 @@ export default function LobbyPage() {
 
   return (
     <AppLayout sidebar={<DashboardSidebar />} rail={<LobbyRail />}>
+      <CreateRoomModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreate={createWithOptions}
+      />
+
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[26px] font-extrabold tracking-[-0.02em]">Lobby 👋</h1>
@@ -244,81 +176,7 @@ export default function LobbyPage() {
         </p>
       )}
 
-      <section className="card mt-5">
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5">
-          <h2 className="flex items-center gap-2 text-[15px] font-bold">
-            Active Rooms
-            <span className="text-[12px] font-semibold text-dim">{rows.length}</span>
-            {live && (
-              <span className="text-[10.5px] font-semibold uppercase tracking-wide text-emerald-400">
-                live
-              </span>
-            )}
-          </h2>
-          <button type="button" onClick={refresh} className="link-quiet">
-            View All Rooms
-          </button>
-        </header>
-
-        <ul className="divide-y divide-line/70">
-          {rows.map((r) => {
-            const full = r.players >= r.max;
-            return (
-              <li
-                key={r.code}
-                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-3.5 sm:grid-cols-[auto_minmax(0,1.4fr)_80px_minmax(0,1fr)_auto]"
-              >
-                <Avatar src={r.avatar} alt={r.host} size={34} />
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 truncate text-[13.5px] font-semibold">
-                    Room: {r.code}
-                    <Lock size={11} className="text-amber" />
-                  </p>
-                  <p className="mt-0.5 truncate text-[11.5px] text-dim">Created by {r.host}</p>
-                </div>
-                <div className="col-start-2 sm:col-start-auto">
-                  <p className="text-[13px] font-semibold">
-                    {r.players} / {r.max}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-dim">Players</p>
-                </div>
-                <div className="col-start-2 sm:col-start-auto">
-                  <p className="truncate text-[13px] font-semibold">{r.level}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-dim">{r.req}</p>
-                </div>
-                <button
-                  type="button"
-                  disabled={full}
-                  onClick={() => join(r.code)}
-                  className={`col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end ${
-                    full
-                      ? "cursor-not-allowed rounded-lg bg-white/5 px-6 py-2 text-[12.5px] font-semibold text-dim"
-                      : "btn btn-blue !px-7 !py-2 !text-[12.5px]"
-                  }`}
-                  aria-label={full ? `${r.code} is full` : `Join room ${r.code}`}
-                >
-                  {full ? "Full" : "Join"}
-                </button>
-              </li>
-            );
-          })}
-          {!rows.length && (
-            <li className="px-4 py-10 text-center text-[13px] text-dim">
-              No active rooms right now — create one to get started.
-            </li>
-          )}
-        </ul>
-
-        <div className="px-4 py-4">
-          <button
-            type="button"
-            onClick={refresh}
-            className="btn btn-ghost mx-auto !py-2.5 !text-[12.5px]"
-          >
-            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh Rooms
-          </button>
-        </div>
-      </section>
+      <MyInvitations onAccepted={(roomId) => router.push(`/rooms/${roomId}`)} />
     </AppLayout>
   );
 }

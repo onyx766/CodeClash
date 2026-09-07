@@ -20,6 +20,7 @@ import {
   setAuthCookies,
   clearAuthCookies,
 } from '../../common/security/cookie.util';
+import { getClientIp } from '../../common/utils/client-ip.util';
 import { REFRESH_TOKEN_COOKIE } from '../../common/constants/auth.constants';
 import { UnauthenticatedException } from '../../common/exceptions/app.exception';
 import { AuthenticatedUser } from './auth.types';
@@ -36,12 +37,14 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async register(
     @Body() body: RegisterDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const { user, tokens } = await this.authService.register(
       body.email,
       body.username,
       body.password,
+      getClientIp(req),
     );
     setAuthCookies(res, tokens, this.config);
     return { success: true, user };
@@ -52,11 +55,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() body: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const { user, tokens } = await this.authService.login(
       body.email,
       body.password,
+      getClientIp(req),
     );
     setAuthCookies(res, tokens, this.config);
     return { success: true, user };

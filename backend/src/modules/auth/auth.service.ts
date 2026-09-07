@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
@@ -7,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
 } from '../../common/security/password.util';
+import { isLocalOrPrivateIp } from '../../common/utils/client-ip.util';
 import {
   EmailAlreadyExistsException,
   InvalidCredentialsException,
@@ -14,6 +15,7 @@ import {
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
 import { UsersService } from '../users/users.service';
+import { GeolocationService } from '../geolocation/geolocation.service';
 import {
   AccessTokenPayload,
   RefreshTokenPayload,
@@ -31,16 +33,20 @@ interface UserPublicFields {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly geolocationService: GeolocationService,
   ) {}
 
   async register(
     email: string,
     username: string,
     password: string,
+    ip?: string | null,
   ): Promise<{ user: SafeUser; tokens: TokenPair }> {
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -65,12 +71,15 @@ export class AuthService {
 
     const tokens = this.generateTokens(user);
 
+    await this.detectAndUpdateLocation(user.id, ip);
+
     return { user: this.toSafeUser(user), tokens };
   }
 
   async login(
     email: string,
     password: string,
+    ip?: string | null,
   ): Promise<{ user: SafeUser; tokens: TokenPair }> {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await this.usersService.findByEmail(normalizedEmail);
@@ -85,6 +94,8 @@ export class AuthService {
     }
 
     const tokens = this.generateTokens(user);
+
+    await this.detectAndUpdateLocation(user.id, ip);
 
     return { user: this.toSafeUser(user), tokens };
   }
@@ -158,5 +169,51 @@ export class AuthService {
       email: user.email,
       createdAt: user.createdAt,
     };
+  }
+
+  /**
+   * Best-effort location enrichment. Never allowed to fail registration or
+   * login - any error (private IP, provider down, timeout, DB hiccup) is
+   * swallowed here so the caller's auth flow is unaffected.
+   */
+  private async detectAndUpdateLocation(
+    userId: string,
+    ip: string | null | undefined,
+  ): Promise<void> {
+    try {
+      const resolvedIp = this.resolveIpForGeolocation(ip);
+      if (!resolvedIp) return;
+
+      const location =
+        await this.geolocationService.getLocationFromIp(resolvedIp);
+      if (!location) return;
+
+      await this.usersService.updateLocation(userId, location);
+    } catch (err) {
+      this.logger.debug(
+        `Skipping geolocation update for user ${userId}: ${
+          (err as Error).message
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Real public IPs are used as-is. Local/private IPs (the norm in dev) are
+   * only geolocated if GEOLOCATION_DEV_IP is explicitly set outside production.
+   */
+  private resolveIpForGeolocation(
+    ip: string | null | undefined,
+  ): string | null {
+    if (ip && !isLocalOrPrivateIp(ip)) {
+      return ip;
+    }
+
+    if (this.config.get<string>('NODE_ENV') !== 'production') {
+      const devIp = this.config.get<string>('GEOLOCATION_DEV_IP');
+      if (devIp) return devIp;
+    }
+
+    return null;
   }
 }
