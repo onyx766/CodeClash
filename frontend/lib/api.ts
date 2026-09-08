@@ -1,4 +1,16 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+// NEXT_PUBLIC_API_URL overrides this for deployments where the API lives on
+// a different host. Otherwise, derive it from whatever host the browser used
+// to load the page - this stays correct even when accessed via a VPN IP that
+// changes between sessions, since that same host just served the page.
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:4000/api`;
+  }
+  return 'http://localhost:4000/api';
+}
+
+const BASE = getApiBase();
 
 type ApiErrorBody = { success?: false; error?: { code?: string; message?: string } };
 
@@ -52,6 +64,7 @@ export const rooms = {
   create: (maxPlayers = 2) => request('POST', '/rooms', { maxPlayers }),
   join: (code: string) => request('POST', '/rooms/join', { code }),
   get: (id: string) => request('GET', `/rooms/${id}`),
+  leave: (id: string) => request('POST', `/rooms/${id}/leave`),
   invite: (roomId: string, username: string) =>
     request('POST', `/rooms/${roomId}/invite`, { username }),
 };

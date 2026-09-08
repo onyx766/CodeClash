@@ -13,8 +13,10 @@ import MyInvitations from "../../components/app/MyInvitations";
 
 export default function LobbyPage() {
   const router = useRouter();
-  const [code, setCode] = useState("");
-  const [joinOpen, setJoinOpen] = useState(false);
+  const invitedCode =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("code") : null;
+  const [code, setCode] = useState(() => invitedCode?.toUpperCase() ?? "");
+  const [joinOpen, setJoinOpen] = useState(() => Boolean(invitedCode));
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
 

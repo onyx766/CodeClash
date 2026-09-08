@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { RoomsService } from '../rooms/rooms.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UnauthenticatedException } from '../../common/exceptions/app.exception';
 import { AuthenticatedUser } from './auth.types';
@@ -24,6 +25,7 @@ describe('AuthController', () => {
   let authService: jest.Mocked<
     Pick<AuthService, 'register' | 'login' | 'refresh'>
   >;
+  let roomsService: jest.Mocked<Pick<RoomsService, 'findActiveRoomForUser'>>;
 
   const safeUser = {
     id: 'user-1',
@@ -38,11 +40,15 @@ describe('AuthController', () => {
       login: jest.fn(),
       refresh: jest.fn(),
     };
+    roomsService = {
+      findActiveRoomForUser: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: authService },
+        { provide: RoomsService, useValue: roomsService },
         {
           provide: ConfigService,
           useValue: {
@@ -101,11 +107,12 @@ describe('AuthController', () => {
     );
   });
 
-  it('login sets auth cookies and returns the safe user', async () => {
+  it('login sets auth cookies and returns the safe user with no active room', async () => {
     authService.login.mockResolvedValue({
       user: safeUser,
       tokens: { accessToken: 'access', refreshToken: 'refresh' },
     });
+    roomsService.findActiveRoomForUser.mockResolvedValue(null);
     const res = mockResponse();
 
     const result = await controller.login(
@@ -115,7 +122,33 @@ describe('AuthController', () => {
     );
 
     expect(res.cookie).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ success: true, user: safeUser });
+    expect(result).toEqual({ success: true, user: safeUser, activeRoom: null });
+  });
+
+  it('login returns the id/code of a room the user is already in', async () => {
+    authService.login.mockResolvedValue({
+      user: safeUser,
+      tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    });
+    roomsService.findActiveRoomForUser.mockResolvedValue({
+      id: 'room-1',
+      code: 'ABC123',
+    } as Awaited<ReturnType<RoomsService['findActiveRoomForUser']>>);
+
+    const result = await controller.login(
+      { email: 'kevin@example.com', password: 'securePassword123' },
+      mockRequest(),
+      mockResponse(),
+    );
+
+    expect(roomsService.findActiveRoomForUser).toHaveBeenCalledWith(
+      safeUser.id,
+    );
+    expect(result).toEqual({
+      success: true,
+      user: safeUser,
+      activeRoom: { id: 'room-1', code: 'ABC123' },
+    });
   });
 
   it('logout clears both auth cookies and returns success', () => {
@@ -126,13 +159,31 @@ describe('AuthController', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('me returns the authenticated user attached by the guard', () => {
+  it('me returns the authenticated user attached by the guard', async () => {
     const user: AuthenticatedUser = { ...safeUser, role: Role.USER };
     const req = { user } as unknown as Parameters<typeof controller.me>[0];
+    roomsService.findActiveRoomForUser.mockResolvedValue(null);
 
-    const result = controller.me(req);
+    const result = await controller.me(req);
 
-    expect(result).toEqual({ success: true, user: safeUser });
+    expect(result).toEqual({ success: true, user: safeUser, activeRoom: null });
+  });
+
+  it('me includes the id/code of a room the user is already in', async () => {
+    const user: AuthenticatedUser = { ...safeUser, role: Role.USER };
+    const req = { user } as unknown as Parameters<typeof controller.me>[0];
+    roomsService.findActiveRoomForUser.mockResolvedValue({
+      id: 'room-1',
+      code: 'ABC123',
+    } as Awaited<ReturnType<RoomsService['findActiveRoomForUser']>>);
+
+    const result = await controller.me(req);
+
+    expect(result).toEqual({
+      success: true,
+      user: safeUser,
+      activeRoom: { id: 'room-1', code: 'ABC123' },
+    });
   });
 });
 

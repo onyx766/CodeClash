@@ -36,7 +36,14 @@ async function bootstrap() {
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
 
-  app.enableCors({ origin: frontendUrls, credentials: true });
+  // In development, VPN/LAN IPs can change frequently, so reflect whatever
+  // origin the browser sends instead of maintaining an allowlist. Production
+  // still enforces the FRONTEND_URL allowlist.
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
+  app.enableCors({
+    origin: isProduction ? frontendUrls : true,
+    credentials: true,
+  });
   app.setGlobalPrefix('api');
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

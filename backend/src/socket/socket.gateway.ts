@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../database/prisma.service';
+import { RoomsService } from '../modules/rooms/rooms.service';
 import { SocketEvents } from './socket.events';
 
 @WebSocketGateway({ cors: true })
@@ -11,7 +12,13 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private jwt: JwtService, private config: ConfigService, private redis: RedisService, private prisma: PrismaService) {}
+  constructor(
+    private jwt: JwtService,
+    private config: ConfigService,
+    private redis: RedisService,
+    private prisma: PrismaService,
+    private rooms: RoomsService,
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
@@ -51,6 +58,10 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async onRoomLeave(client: Socket, payload: { roomId: string }) {
     const user = client.data.user;
     if (!user) return;
+    // Actually removes the player (and, if they were the host or the last
+    // one in it, the room itself) - previously this only left the socket.io
+    // broadcast group, so cancelled/abandoned rooms never freed up the host.
+    await this.rooms.leaveRoom(user.id, payload.roomId);
     client.leave(`room:${payload.roomId}`);
     const room = await this.prisma.room.findUnique({ where: { id: payload.roomId }, include: { players: { include: { user: true } } } });
     const r = this.redis.getClient();

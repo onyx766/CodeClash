@@ -29,8 +29,8 @@ export default function LoginPage() {
     setBusy(true);
 
     try {
-      await login(email, password);
-      router.push(getNextPath());
+      const { activeRoom } = await login(email, password);
+      router.push(activeRoom ? `/rooms/${activeRoom.id}` : getNextPath());
     } catch {
       setError("Login failed. Check your email and password.");
     } finally {

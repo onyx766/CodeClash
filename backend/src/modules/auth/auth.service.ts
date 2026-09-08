@@ -146,11 +146,9 @@ export class AuthService {
       type: 'refresh',
     };
 
+    // No expiresIn - the access token never expires (no `exp` claim).
     const accessToken = this.jwtService.sign(accessPayload, {
       secret: this.config.get<string>('JWT_ACCESS_SECRET'),
-      expiresIn: this.config.get<string>(
-        'JWT_ACCESS_EXPIRES_IN',
-      ) as StringValue,
     });
     const refreshToken = this.jwtService.sign(refreshPayload, {
       secret: this.config.get<string>('JWT_REFRESH_SECRET'),

@@ -173,6 +173,9 @@ model Room {
   status     RoomStatus @default(WAITING)
   maxPlayers Int        @default(2)
   createdAt  DateTime   @default(now())
+  // Waiting rooms with no match yet are pruned once past this. Never
+  // enforced once a Match exists - see RoomsService.isExpired.
+  expiresAt  DateTime?
 
   players     RoomPlayer[]
   match       Match?
