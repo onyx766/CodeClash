@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MatchStatus } from '@prisma/client';
+import { MatchStatus, MatchType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InvalidMatchStateException } from '../../common/exceptions/app.exception';
 import { calculateEloChange } from './elo.util';
@@ -27,7 +27,7 @@ export class RatingService {
   async applyMatchRating(matchId: string): Promise<RatingResult> {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
-      include: { room: { include: { players: true } } },
+      include: { room: { include: { players: true } }, participants: true },
     });
     if (!match) throw new NotFoundException('Match not found');
 
@@ -44,9 +44,15 @@ export class RatingService {
     if (!match.winnerId) {
       throw new InvalidMatchStateException('Match has no winner recorded.');
     }
-    const loserId = match.room.players
-      .map((p) => p.userId)
-      .find((userId) => userId !== match.winnerId);
+
+    // Quick Match has no Room - its players come from MatchParticipant
+    // instead. Private-room matches are unchanged and keep reading
+    // room.players (this branch never runs for them).
+    const playerIds =
+      match.type === MatchType.QUICK_MATCH
+        ? match.participants.map((p) => p.userId)
+        : match.room?.players.map((p) => p.userId) ?? [];
+    const loserId = playerIds.find((userId) => userId !== match.winnerId);
     if (!loserId) {
       throw new InvalidMatchStateException('Match does not have two players.');
     }

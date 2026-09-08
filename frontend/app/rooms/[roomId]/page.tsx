@@ -24,7 +24,7 @@ import { getSocket } from "../../../lib/socket";
 import { rooms, matches, ApiError } from "../../../lib/api";
 import useAuth from "../../../hooks/useAuth";
 import { currentUser } from "../../../lib/demo";
-import { Avatar } from "../../../components/ui/Bits";
+import { Avatar, avatarForUserId } from "../../../components/ui/Bits";
 
 type RoomPlayer = {
   id: string;
@@ -67,11 +67,26 @@ export default function RoomPage() {
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    rooms.get(roomId).then(setRoom).catch(() => {});
+    rooms
+      .get(roomId)
+      .then(setRoom)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) {
+          clearActiveRoom();
+          router.replace("/lobby");
+        }
+      });
     const s = getSocket();
     s.emit("room:join", { roomId });
-    s.on("room:update", (payload: { room?: Room }) => {
-      if (payload.room) setRoom(payload.room);
+    s.on("room:update", (payload: { room?: Room | null }) => {
+      if (payload.room) {
+        setRoom(payload.room);
+      } else if (payload.room === null) {
+        // The room was cancelled or emptied out from under us (e.g. the host
+        // left) - bounce back to the lobby instead of showing stale state.
+        clearActiveRoom();
+        router.replace("/lobby");
+      }
     });
     return () => {
       s.emit("room:leave", { roomId });
@@ -151,7 +166,7 @@ export default function RoomPage() {
 
   if (!room) {
     return (
-      <div className="cc-container flex min-h-screen items-center justify-center py-10">
+      <div className="cc-container flex h-screen items-center justify-center overflow-hidden">
         <p className="text-[13px] text-dim">Loading room…</p>
       </div>
     );
@@ -160,168 +175,177 @@ export default function RoomPage() {
   const slots = Array.from({ length: room.maxPlayers }, (_, i) => room.players[i] ?? null);
 
   return (
-    <div className="cc-container min-h-screen py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="cc-container flex h-screen flex-col overflow-hidden py-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <Link
           href="/lobby"
-          className="flex items-center gap-2 text-[13.5px] font-medium text-muted transition-colors hover:text-fg"
+          className="flex items-center gap-2 text-[13px] font-medium text-muted transition-colors hover:text-fg"
         >
-          <ArrowLeft size={16} /> Back to Lobby
+          <ArrowLeft size={15} /> Back to Lobby
         </Link>
-        <button type="button" className="btn btn-ghost !px-4 !py-2.5 !text-[12.5px]">
-          <Settings size={14} /> Room Settings
+        <button type="button" className="btn btn-ghost !px-3.5 !py-2 !text-[12px]">
+          <Settings size={13} /> Room Settings
         </button>
       </div>
 
-      <section className="card mt-5 p-6 sm:p-8">
+      <section className="card mt-2.5 shrink-0 p-3.5 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet to-violet-deep text-white">
-              <Lock size={20} />
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet to-violet-deep text-white">
+              <Lock size={16} />
             </span>
-            <h1 className="text-[18px] font-bold">Private Room</h1>
+            <h1 className="text-[15px] font-bold">Private Room</h1>
           </div>
-          <span className="flex items-center gap-2 text-[12.5px] font-semibold text-emerald-400">
+          <span className="flex items-center gap-2 text-[12px] font-semibold text-emerald-400">
             <span className="dot-live" /> {isFull ? "Ready to start!" : "Waiting for opponent…"}
           </span>
         </div>
 
-        <div className="mt-8 text-center">
-          <p className="eyebrow">Room Code</p>
-          <p className="mt-3 text-[52px] font-extrabold leading-none tracking-[0.08em]">{room.code}</p>
-          <p className="mt-3 text-[13px] text-dim">Share this code or invite link with your friend to join the room.</p>
+        <div className="mt-2.5 text-center">
+          <p className="eyebrow !text-[10px]">Room Code</p>
+          <p className="mt-1 text-[32px] font-extrabold leading-none tracking-[0.08em]">{room.code}</p>
 
-          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-            <button type="button" onClick={copyCode} className="btn btn-violet sm:w-auto sm:min-w-[180px]">
-              {copiedCode ? <Check size={15} /> : <Copy size={15} />}
+          <div className="mt-3 flex flex-col justify-center gap-2.5 sm:flex-row">
+            <button type="button" onClick={copyCode} className="btn btn-violet !py-2 sm:w-auto sm:min-w-[160px]">
+              {copiedCode ? <Check size={14} /> : <Copy size={14} />}
               {copiedCode ? "Copied!" : "Copy Code"}
             </button>
-            <button type="button" onClick={copyInviteLink} className="btn btn-ghost sm:w-auto sm:min-w-[180px]">
-              {copiedLink ? <Check size={15} /> : <Link2 size={15} />}
+            <button type="button" onClick={copyInviteLink} className="btn btn-ghost !py-2 sm:w-auto sm:min-w-[160px]">
+              {copiedLink ? <Check size={14} /> : <Link2 size={14} />}
               {copiedLink ? "Copied!" : "Copy Invite Link"}
             </button>
           </div>
         </div>
       </section>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mt-2.5 grid shrink-0 grid-cols-2 gap-2.5 lg:grid-cols-4">
         {[
           { icon: Gamepad2, label: "Mode", value: room.mode === "CASUAL" ? "Casual Match" : "Match" },
           { icon: Users, label: "Players", value: `${room.players.length} / ${room.maxPlayers}` },
           { icon: BarChart3, label: "Level Range", value: "Any Level" },
           { icon: Clock, label: "Expires In", value: remainingLabel },
         ].map((s) => (
-          <div key={s.label} className="card flex items-center gap-3 p-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted">
-              <s.icon size={18} />
+          <div key={s.label} className="card flex items-center gap-2.5 p-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted">
+              <s.icon size={15} />
             </span>
             <span className="min-w-0">
-              <span className="block text-[11.5px] text-dim">{s.label}</span>
-              <span className="block truncate text-[15px] font-bold">{s.value}</span>
+              <span className="block text-[10.5px] text-dim">{s.label}</span>
+              <span className="block truncate text-[13px] font-bold">{s.value}</span>
             </span>
           </div>
         ))}
       </div>
 
-      <section className="card mt-4 border-violet/30 bg-violet/5 p-4 sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet/20 text-violet-300">
-              <Send size={18} />
-            </span>
-            <div>
-              <h2 className="text-[15px] font-bold">Invite a Friend</h2>
-              <p className="mt-0.5 text-[12.5px] text-dim">Send an invite directly by username.</p>
-            </div>
-          </div>
-          <form onSubmit={invite} className="flex flex-1 flex-col gap-2 sm:max-w-[420px] sm:flex-row">
-            <input
-              value={inviteInput}
-              onChange={(e) => setInviteInput(e.target.value)}
-              placeholder="Enter a username…"
-              aria-label="Friend's username"
-              className="field"
-            />
-            <button
-              type="submit"
-              disabled={!inviteInput.trim() || inviteSending}
-              className="btn btn-violet sm:w-auto"
-            >
-              <Send size={14} /> {inviteSending ? "Sending…" : "Send Invite"}
-            </button>
-          </form>
-        </div>
-        {inviteMessage && <p className="mt-3 text-[12.5px] text-dim">{inviteMessage}</p>}
-      </section>
-
-      <section className="card mt-4 p-5">
-        <h2 className="text-[15px] font-bold">
+      <section className="card mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden p-3.5">
+        <h2 className="shrink-0 text-[13px] font-bold">
           Players ({room.players.length}/{room.maxPlayers})
         </h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {slots.map((player, i) =>
-            player ? (
-              <div key={player.id} className="card-soft flex flex-col items-center p-5 text-center">
+        <div className="mt-2.5 grid min-h-0 flex-1 grid-cols-2 gap-3">
+          {slots.map((player, i) => {
+            const isHostPlayer = player?.userId === room.hostId;
+            return player ? (
+              <div
+                key={player.id}
+                className={`flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border p-2 text-center ${
+                  isHostPlayer ? "border-violet/40 bg-violet/10" : "card-soft"
+                }`}
+              >
+                <span
+                  className={`mb-1 flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                    isHostPlayer ? "bg-violet/25 text-violet-200" : "bg-white/5 text-dim"
+                  }`}
+                >
+                  {isHostPlayer && <Crown size={11} className="text-amber" />}
+                  {isHostPlayer ? "Host" : "Challenger"}
+                </span>
                 <Avatar
-                  src={player.userId === user?.id ? currentUser.avatar : "/img/avatars/avatar-3.png"}
+                  src={player.userId === user?.id ? currentUser.avatar : avatarForUserId(player.userId)}
                   alt={player.user?.username ?? "Player"}
-                  size={64}
+                  size={92}
+                  ring={isHostPlayer}
+                  className="shrink-0"
                 />
-                <p className="mt-3 flex items-center gap-1.5 text-[15px] font-bold">
+                <p className="mt-1 flex shrink-0 flex-wrap items-center justify-center gap-1.5 text-[15px] font-bold">
                   {player.user?.username ?? "Unknown"}
-                  {player.userId === room.hostId && <Crown size={15} className="text-amber" />}
                 </p>
                 {player.userId === user?.id && (
-                  <p className="mt-1 flex items-center gap-1 text-[12.5px] font-semibold text-violet-300">
-                    <Gem size={13} /> {currentUser.rating}
+                  <p className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-violet-300">
+                    <Gem size={12} /> {currentUser.rating}
                   </p>
                 )}
-                {player.userId === room.hostId && (
-                  <span className="mt-2 rounded-md bg-violet/20 px-2.5 py-1 text-[11px] font-bold text-violet-300">
-                    Host
-                  </span>
-                )}
+              </div>
+            ) : isHost ? (
+              <div
+                key={`invite-${i}`}
+                className="flex min-h-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-dashed border-violet/40 bg-violet/5 p-3 text-center"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet/20 text-violet-300">
+                  <Send size={17} />
+                </span>
+                <p className="shrink-0 text-[13.5px] font-bold">Invite a Friend</p>
+                <p className="hidden shrink-0 text-[11px] text-dim sm:block">
+                  Share the room code above, or invite by username
+                </p>
+                <form onSubmit={invite} className="mt-1 flex w-full max-w-[220px] shrink-0 flex-col gap-1.5">
+                  <input
+                    value={inviteInput}
+                    onChange={(e) => setInviteInput(e.target.value)}
+                    placeholder="Enter a username…"
+                    aria-label="Friend's username"
+                    className="field !py-1.5 !text-[12px]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!inviteInput.trim() || inviteSending}
+                    className="btn btn-violet w-full !py-1.5 !text-[12px]"
+                  >
+                    <Send size={12} /> {inviteSending ? "Sending…" : "Send Invite"}
+                  </button>
+                </form>
+                {inviteMessage && <p className="shrink-0 text-[10.5px] text-dim">{inviteMessage}</p>}
               </div>
             ) : (
               <div
                 key={`empty-${i}`}
-                className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line p-5 text-center"
+                className="flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-dashed border-line p-2 text-center"
               >
-                <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-line text-dim">
-                  <Plus size={22} />
+                <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border border-dashed border-line text-dim">
+                  <Plus size={26} />
                 </span>
-                <p className="mt-3 text-[14px] font-semibold text-muted">Waiting for opponent…</p>
-                <p className="mt-1 text-[12px] text-dim">Share the room code or send an invite to get started!</p>
+                <p className="mt-1.5 shrink-0 text-[13.5px] font-semibold text-muted">Waiting for opponent…</p>
               </div>
-            ),
-          )}
+            );
+          })}
         </div>
       </section>
 
-      {isHost && isFull && (
+      <div className="mt-2.5 flex shrink-0 gap-2.5">
+        {isHost && isFull && (
+          <button
+            type="button"
+            onClick={start}
+            disabled={starting}
+            className="btn btn-blue flex-1 !py-2.5 !text-[13px]"
+          >
+            {starting ? "Starting…" : "Start Match"}
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={start}
-          disabled={starting}
-          className="btn btn-blue mt-4 w-full !py-3.5 !text-[14px]"
+          onClick={leaveRoom}
+          disabled={leaving}
+          className={
+            isHost
+              ? "flex flex-1 items-center justify-center gap-2 rounded-xl border border-rose/40 bg-rose/10 py-2.5 text-[13px] font-bold text-rose-300 transition-colors hover:bg-rose/15 disabled:opacity-60"
+              : "btn btn-ghost flex-1 !py-2.5 !text-[13px] disabled:opacity-60"
+          }
         >
-          {starting ? "Starting…" : "Start Match"}
+          <XCircle size={14} />
+          {leaving ? "Leaving…" : isHost ? "Cancel Room" : "Leave Room"}
         </button>
-      )}
-
-      <button
-        type="button"
-        onClick={leaveRoom}
-        disabled={leaving}
-        className={
-          isHost
-            ? "mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-rose/40 bg-rose/10 py-3.5 text-[14px] font-bold text-rose-300 transition-colors hover:bg-rose/15 disabled:opacity-60"
-            : "btn btn-ghost mt-4 w-full !py-3.5 !text-[14px] disabled:opacity-60"
-        }
-      >
-        <XCircle size={16} />
-        {leaving ? "Leaving…" : isHost ? "Cancel Room" : "Leave Room"}
-      </button>
+      </div>
     </div>
   );
 }

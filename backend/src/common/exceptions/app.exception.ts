@@ -5,8 +5,12 @@ export class AppException extends HttpException {
     public readonly code: string,
     message: string,
     status: HttpStatus,
+    // Optional extra fields merged into the error response body alongside
+    // code/message - e.g. MATCH_ALREADY_FOUND's matchId. Omitted by default
+    // so every existing subclass keeps its current {code, message} shape.
+    details?: Record<string, unknown>,
   ) {
-    super({ code, message }, status);
+    super({ code, message, ...details }, status);
   }
 }
 
@@ -124,6 +128,73 @@ export class InvitationAlreadyHandledException extends AppException {
       'INVITATION_ALREADY_HANDLED',
       'This invitation has already been responded to.',
       HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class MatchmakingUnavailableException extends AppException {
+  constructor() {
+    super(
+      'MATCHMAKING_UNAVAILABLE',
+      'Matchmaking is temporarily unavailable.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}
+
+export class ActiveRoomExistsException extends AppException {
+  constructor() {
+    super(
+      'ACTIVE_ROOM_EXISTS',
+      'Leave or cancel your active room before starting Quick Match.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class ActiveMatchExistsException extends AppException {
+  constructor() {
+    super(
+      'ACTIVE_MATCH_EXISTS',
+      'You already have an active match.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class MatchNotFoundException extends AppException {
+  constructor() {
+    super('MATCH_NOT_FOUND', 'Match not found.', HttpStatus.NOT_FOUND);
+  }
+}
+
+export class UserStatsNotFoundException extends AppException {
+  constructor() {
+    super(
+      'USER_STATS_NOT_FOUND',
+      'Your rating record could not be found.',
+      HttpStatus.NOT_FOUND,
+    );
+  }
+}
+
+export class ChallengePoolInsufficientException extends AppException {
+  constructor() {
+    super(
+      'CHALLENGE_POOL_INSUFFICIENT',
+      'Not enough published challenges to start the match.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class MatchAlreadyFoundException extends AppException {
+  constructor(public readonly matchId: string | null) {
+    super(
+      'MATCH_ALREADY_FOUND',
+      'A match has already been found.',
+      HttpStatus.CONFLICT,
+      matchId ? { matchId } : undefined,
     );
   }
 }

@@ -15,7 +15,12 @@ function getWsUrl() {
 export function getSocket(token?: string) {
   if (socket) return socket;
   socket = io(getWsUrl(), {
-    auth: { token: token || (typeof window !== 'undefined' ? localStorage.getItem('token') : undefined) },
+    // Auth is a cookie set by the API (httpOnly, so it isn't readable here) -
+    // withCredentials makes the browser attach it to the handshake request,
+    // same as fetch's credentials: 'include' in lib/api.ts. `token` stays as
+    // an explicit override for non-browser/test callers.
+    withCredentials: true,
+    auth: token ? { token } : undefined,
   });
   return socket;
 }

@@ -9,4 +9,10 @@ export const SocketEvents = {
   ROUND_START: 'round:start',
   ROUND_UPDATE: 'round:update',
   SUBMISSION_RESULT: 'submission:result',
+  MATCHMAKING_SEARCHING: 'matchmaking:searching',
+  MATCHMAKING_MATCH_FOUND: 'matchmaking:match-found',
+  MATCHMAKING_CANCELLED: 'matchmaking:cancelled',
+  MATCHMAKING_OPPONENT_UNAVAILABLE: 'matchmaking:opponent-unavailable',
+  MATCHMAKING_ERROR: 'matchmaking:error',
+  MATCH_READY: 'match:ready',
 };

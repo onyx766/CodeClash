@@ -35,9 +35,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const body = exception.getResponse();
 
       if (isErrorBody(body)) {
+        // Forward any extra fields an AppException attached (e.g.
+        // MATCH_ALREADY_FOUND's matchId) alongside the standard code/message.
+        const { code, message, ...extra } = body;
         response.status(status).send({
           success: false,
-          error: { code: body.code, message: body.message },
+          error: { code, message, ...extra },
         });
         return;
       }

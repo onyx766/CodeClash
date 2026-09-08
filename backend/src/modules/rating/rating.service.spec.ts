@@ -23,12 +23,14 @@ describe('RatingService', () => {
   function baseMatch(overrides: Partial<Record<string, any>> = {}) {
     return {
       id: MATCH_ID,
+      type: 'PRIVATE_ROOM',
       status: MatchStatus.FINISHED,
       winnerId: WINNER_ID,
       ratingEligible: false,
       ratingReason: 'PRIVATE_ROOM_CASUAL',
       ratingProcessedAt: null,
       room: { players: [{ userId: WINNER_ID }, { userId: LOSER_ID }] },
+      participants: [],
       ...overrides,
     };
   }
@@ -194,6 +196,48 @@ describe('RatingService', () => {
       // logic re-applies part of the update outside the transaction.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.match.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Quick Match (no Room - MatchParticipant instead)', () => {
+    beforeEach(() => {
+      prisma.match.findUnique.mockResolvedValue(
+        baseMatch({
+          type: 'QUICK_MATCH',
+          ratingEligible: true,
+          ratingReason: null,
+          room: null,
+          participants: [{ userId: WINNER_ID }, { userId: LOSER_ID }],
+        }),
+      );
+      prisma.userStats.findUnique.mockResolvedValue({
+        rating: 1200,
+        wins: 0,
+        losses: 0,
+        matchesPlayed: 0,
+        bestStreak: 0,
+        currentStreak: 0,
+      });
+    });
+
+    it('derives winner/loser from MatchParticipant, not room.players, and still applies Elo', async () => {
+      const result = await service.applyMatchRating(MATCH_ID);
+      expect(result.winnerChange).toBeGreaterThan(0);
+      expect(result.loserChange).toBe(-result.winnerChange);
+    });
+
+    it('throws when a second participant cannot be found', async () => {
+      prisma.match.findUnique.mockResolvedValue(
+        baseMatch({
+          type: 'QUICK_MATCH',
+          ratingEligible: true,
+          room: null,
+          participants: [{ userId: WINNER_ID }],
+        }),
+      );
+      await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(
+        InvalidMatchStateException,
+      );
     });
   });
 });

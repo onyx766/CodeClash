@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
+import { pickRandom } from '../matchmaking/matchmaking.util';
 
 @Injectable()
 export class MatchesService {
@@ -33,16 +34,7 @@ export class MatchesService {
     });
     if (challenges.length < totalRounds)
       throw new BadRequestException('Not enough published challenges');
-    // simple random pick without repeats
-    const picks: any[] = [];
-    const used = new Set<string>();
-    while (picks.length < totalRounds) {
-      const c = challenges[Math.floor(Math.random() * challenges.length)];
-      if (!used.has(c.id)) {
-        used.add(c.id);
-        picks.push(c);
-      }
-    }
+    const picks = pickRandom(challenges, totalRounds);
 
     // Every match today originates from a host-created, code-joined room, i.e.
     // a private room. Hardcoded server-side - never derived from client input -

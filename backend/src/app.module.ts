@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -33,8 +34,40 @@ import { AppService } from './app.service';
         GEOLOCATION_API_KEY: Joi.string().allow('').optional(),
         GEOLOCATION_TIMEOUT_MS: Joi.number().integer().min(0).default(2000),
         GEOLOCATION_DEV_IP: Joi.string().allow('').optional(),
+
+        // Quick Match matchmaking (see modules/matchmaking). Rating-tolerance
+        // widening schedule, in rating points, keyed by wait time.
+        MATCHMAKING_RANGE_INITIAL: Joi.number().integer().min(1).default(100),
+        MATCHMAKING_RANGE_10S: Joi.number().integer().min(1).default(150),
+        MATCHMAKING_RANGE_20S: Joi.number().integer().min(1).default(250),
+        MATCHMAKING_RANGE_30S: Joi.number().integer().min(1).default(400),
+        MATCHMAKING_RANGE_MAX: Joi.number().integer().min(1).default(600),
+        // Background pairing loop cadence and per-tick batch size.
+        MATCHMAKING_TICK_MS: Joi.number().integer().min(100).default(1000),
+        MATCHMAKING_MAX_PER_TICK: Joi.number().integer().min(1).default(50),
+        // TTL for the short Redis reservation held between an atomic pair
+        // claim and the Postgres Match being created.
+        MATCHMAKING_RESERVATION_TTL_SECONDS: Joi.number()
+          .integer()
+          .min(1)
+          .default(20),
+        // A searching user is dropped from the queue if we haven't heard
+        // from them (socket connect, or a status poll) for this long -
+        // covers both the disconnect grace period and general staleness.
+        MATCHMAKING_STALE_TIMEOUT_MS: Joi.number()
+          .integer()
+          .min(1000)
+          .default(10_000),
+        // Soft repeat-opponent avoidance window.
+        MATCHMAKING_RECENT_OPPONENT_TTL_SECONDS: Joi.number()
+          .integer()
+          .min(0)
+          .default(1800),
+        // How long both players have to confirm ready after a match is found.
+        MATCH_READY_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(10),
       }),
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     // Core modules
     // Database and Redis modules provide PrismaService and RedisService
@@ -47,6 +80,7 @@ import { AppService } from './app.service';
     require('./modules/invitations/invitations.module').InvitationsModule,
     require('./socket/socket.module').SocketModule,
     require('./modules/rounds/rounds.module').RoundsModule,
+    require('./modules/matchmaking/matchmaking.module').MatchmakingModule,
     require('./modules/matches/matches.module').MatchesModule,
     require('./modules/leaderboard/leaderboard.module').LeaderboardModule,
     require('./modules/rating/rating.module').RatingModule,

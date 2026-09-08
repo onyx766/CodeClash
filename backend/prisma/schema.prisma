@@ -35,6 +35,12 @@ enum InvitationStatus {
 
 enum MatchStatus {
   PENDING
+  // Quick Match only: match has been created and is waiting on both
+  // participants to confirm readiness (see MatchParticipant.readyAt).
+  // Private-room matches never enter these two states - MatchesService
+  // still creates them directly as IN_PROGRESS.
+  PENDING_READY
+  READY
   IN_PROGRESS
   FINISHED
   CANCELLED
@@ -79,10 +85,11 @@ model User {
   sentInvitations     RoomInvitation[] @relation("invitationInviter")
   receivedInvitations RoomInvitation[] @relation("invitationInvitee")
 
-  profile       UserProfile?
-  stats         UserStats?
-  preferences   UserPreference?
-  ratingHistory RatingHistory[]
+  profile           UserProfile?
+  stats             UserStats?
+  preferences       UserPreference?
+  ratingHistory     RatingHistory[]
+  matchParticipants MatchParticipant[]
 }
 
 model UserProfile {
@@ -212,8 +219,12 @@ model RoomPlayer {
 
 model Match {
   id                 String      @id @default(uuid())
-  room               Room        @relation(fields: [roomId], references: [id])
-  roomId             String      @unique
+  // Private-room matches only - Quick Match matches have no Room and use
+  // MatchParticipant instead (see below). Nullable specifically so Quick
+  // Match doesn't have to fabricate a Room just to have somewhere to hang
+  // its players.
+  room               Room?       @relation(fields: [roomId], references: [id])
+  roomId             String?     @unique
   status             MatchStatus @default(PENDING)
   currentRoundNumber Int         @default(0)
   totalRounds        Int         @default(3)
@@ -221,6 +232,10 @@ model Match {
   winner             User?       @relation("winner", fields: [winnerId], references: [id])
   startedAt          DateTime?
   finishedAt         DateTime?
+
+  // Quick Match only: deadline for both MatchParticipant rows to have
+  // readyAt set before the match is auto-cancelled. Null for private rooms.
+  readyDeadline DateTime?
 
   // Anti-rigging: server-determined match type and rating eligibility. Never
   // settable by client input - see RoomsService/MatchesService/RatingService.
@@ -235,6 +250,31 @@ model Match {
 
   rounds        Round[]
   ratingHistory RatingHistory[]
+  // Quick Match participants. Private-room matches leave this empty and
+  // keep reading players from room.players - see RatingService.
+  participants  MatchParticipant[]
+}
+
+// Quick Match participant record. Private rooms already have a participant
+// structure (Room.players via RoomPlayer) and continue using it unchanged -
+// this table exists only because Quick Match matches have no Room.
+model MatchParticipant {
+  id String @id @default(uuid())
+
+  matchId String
+  userId  String
+
+  readyAt DateTime?
+
+  // Rating snapshot at matchmaking time - never trust client-provided rating.
+  ratingBefore Int
+  ratingAfter  Int?
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+  @@index([userId])
 }
 
 model Round {

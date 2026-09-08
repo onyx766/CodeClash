@@ -1,6 +1,19 @@
 import Image from "next/image";
 import { Trophy } from "lucide-react";
 
+const AVATAR_COUNT = 16;
+
+// Deterministic placeholder avatar per user id, so the same person renders
+// with the same avatar regardless of which player's browser is looking.
+export function avatarForUserId(userId: string) {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) | 0;
+  }
+  const index = (Math.abs(hash) % AVATAR_COUNT) + 1;
+  return `/img/avatars/avatar-${index}.png`;
+}
+
 export function Avatar({
   src,
   alt,

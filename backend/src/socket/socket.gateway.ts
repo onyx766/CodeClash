@@ -2,12 +2,24 @@ import { OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGa
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { parse as parseCookies } from 'cookie';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../database/prisma.service';
 import { RoomsService } from '../modules/rooms/rooms.service';
 import { SocketEvents } from './socket.events';
+import { ACCESS_TOKEN_COOKIE } from '../common/constants/auth.constants';
+import { touchLastSeen } from '../modules/matchmaking/matchmaking.redis';
+import { loadMatchmakingConfig } from '../modules/matchmaking/matchmaking.constants';
 
-@WebSocketGateway({ cors: true })
+// Reflects any origin in dev (VPN/LAN IPs change often); production is
+// restricted to the configured FRONTEND_URL(s) - mirrors main.ts's HTTP CORS.
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean);
+
+@WebSocketGateway({ cors: { origin: isProduction ? allowedOrigins : true, credentials: true } })
 export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
@@ -20,14 +32,39 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private rooms: RoomsService,
   ) {}
 
+  /**
+   * Auth is cookie-based (httpOnly access-token cookie), not a bearer token
+   * the browser could hand us explicitly - so the handshake carries no
+   * `auth.token` in normal operation. Read the cookie the browser attached to
+   * the handshake request instead, falling back to auth/header token for
+   * non-browser clients.
+   */
+  private extractToken(client: Socket): string | null {
+    const explicit =
+      client.handshake.auth?.token ||
+      client.handshake.headers?.authorization?.toString().replace('Bearer ', '');
+    if (explicit) return explicit;
+    const cookieHeader = client.handshake.headers?.cookie;
+    if (!cookieHeader) return null;
+    return parseCookies(cookieHeader)[ACCESS_TOKEN_COOKIE] ?? null;
+  }
+
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.toString().replace('Bearer ', '');
+      const token = this.extractToken(client);
       if (!token) return client.disconnect();
-      const payload: any = this.jwt.verify(token, { secret: this.config.get('JWT_SECRET') });
-      client.data.user = { id: payload.sub, email: payload.email };
+      const payload: any = this.jwt.verify(token, { secret: this.config.get('JWT_ACCESS_SECRET') });
+      if (payload.type !== 'access') return client.disconnect();
+      client.data.user = { id: payload.sub, role: payload.role };
+      // Lets the server push events to this user regardless of which room
+      // (if any) they're currently viewing - used by matchmaking notifications.
+      client.join(`user:${payload.sub}`);
       const r = this.redis.getClient();
       await r.set(`player:${payload.sub}:presence`, client.id, 'EX', 60 * 60);
+      // Refresh matchmaking queue staleness tracking on (re)connect - a
+      // no-op if this user isn't currently searching. See MatchmakingService.
+      const staleTimeoutMs = loadMatchmakingConfig(this.config).staleTimeoutMs;
+      await touchLastSeen(r, payload.sub, staleTimeoutMs);
       this.server.emit(SocketEvents.ROOM_UPDATE, { userConnected: payload.sub });
     } catch (err) {
       client.disconnect();
