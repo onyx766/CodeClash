@@ -110,6 +110,11 @@ export class AuthController {
         id: user.id,
         username: user.username,
         email: user.email,
+        // The caller's own role. Included so a client (notably the admin
+        // console) can render the right shell without guessing - it is never
+        // what authorises anything: RolesGuard re-reads the role from the JWT
+        // identity on every protected request.
+        role: user.role,
         createdAt: user.createdAt,
       },
       activeRoom: activeRoom ? { id: activeRoom.id, code: activeRoom.code } : null,

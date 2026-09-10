@@ -3,6 +3,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Role } from '@prisma/client';
 import { AdminUsersController } from './admin-users.controller';
 import { RolesService } from './roles.service';
+import { AdminUsersService } from './admin-users.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -20,12 +21,27 @@ describe('AdminUsersController', () => {
     createdAt: new Date(),
   };
 
+  let adminUsers: jest.Mocked<
+    Pick<AdminUsersService, 'list' | 'stats' | 'ban' | 'unban' | 'create' | 'getById'>
+  >;
+
   beforeEach(async () => {
     rolesService = { changeRole: jest.fn() };
+    adminUsers = {
+      list: jest.fn(),
+      stats: jest.fn(),
+      ban: jest.fn(),
+      unban: jest.fn(),
+      create: jest.fn(),
+      getById: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminUsersController],
-      providers: [{ provide: RolesService, useValue: rolesService }],
+      providers: [
+        { provide: RolesService, useValue: rolesService },
+        { provide: AdminUsersService, useValue: adminUsers },
+      ],
     }).compile();
 
     controller = module.get(AdminUsersController);
@@ -62,5 +78,32 @@ describe('AdminUsersController', () => {
   it('requires the MASTER role', () => {
     const roles = Reflect.getMetadata(ROLES_KEY, controller.updateRole);
     expect(roles).toEqual([Role.MASTER]);
+  });
+
+  it('keeps role changes MASTER-only while reads and bans need ADMIN', () => {
+    // Reading and moderating are ADMIN-level; handing out roles stays MASTER.
+    for (const handler of [
+      controller.list,
+      controller.stats,
+      controller.ban,
+      controller.unban,
+      controller.create,
+    ]) {
+      expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([Role.ADMIN]);
+    }
+    expect(Reflect.getMetadata(ROLES_KEY, controller.updateRole)).toEqual([
+      Role.MASTER,
+    ]);
+  });
+
+  it('passes the authenticated actor to moderation, never a client-supplied one', async () => {
+    adminUsers.ban.mockResolvedValue({ user: {} as never });
+    const req = { user: masterUser, body: { actorId: 'someone-else' } } as never;
+
+    await controller.ban('target-1', { reason: 'Cheating' }, req);
+
+    expect(adminUsers.ban).toHaveBeenCalledWith(masterUser, 'target-1', {
+      reason: 'Cheating',
+    });
   });
 });

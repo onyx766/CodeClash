@@ -13,10 +13,56 @@ enum Role {
   MASTER
 }
 
+/// Account standing. BANNED is enforced at authentication time (see
+/// JwtStrategy and AuthService.login), not merely displayed in the admin UI.
+enum UserStatus {
+  ACTIVE
+  BANNED
+}
+
 enum Difficulty {
   EASY
   MEDIUM
   HARD
+  EXPERT
+}
+
+/// Authoring lifecycle. DRAFT is freely editable; PUBLISHED is the only state
+/// the match/challenge pools draw from; ARCHIVED is retired but kept so that
+/// historical Rounds/Submissions still resolve.
+enum ChallengeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Only FUNCTION is implemented. STANDARD_IO is reserved so the column and the
+/// runner protocol do not have to change when stdin/stdout problems land.
+enum ChallengeProblemType {
+  FUNCTION
+  STANDARD_IO
+}
+
+enum JudgeMethod {
+  EXACT
+  DEEP_EQUAL
+  CUSTOM_CHECKER
+  REFERENCE
+}
+
+enum ChallengeCreationMode {
+  MANUAL
+  AI
+  JSON_IMPORT
+}
+
+/// Result of the last server-run validation job. Reset to NOT_CHECKED whenever
+/// anything that can change judging is edited - see
+/// AdminChallengesService.applyValidationInvalidation.
+enum ChallengeValidationStatus {
+  NOT_CHECKED
+  PASSED
+  FAILED
 }
 
 enum RoomStatus {
@@ -70,6 +116,26 @@ model User {
   hostedRooms  Room[]   @relation("host")
   updatedAt    DateTime @updatedAt
 
+  // ---- account standing (admin user management) -------------------------
+  status    UserStatus @default(ACTIVE)
+  bannedAt  DateTime?
+  banReason String?
+  /// Who applied the ban. Kept for the audit trail; nulled if that admin's
+  /// account is ever deleted.
+  bannedById String?
+  bannedBy   User?   @relation("userBans", fields: [bannedById], references: [id], onDelete: SetNull)
+  bannedUsers User[] @relation("userBans")
+
+  /// Last time this account authenticated (login or token refresh). Null for
+  /// an account that has never signed in - the admin UI shows "Never" rather
+  /// than inventing a date.
+  lastActiveAt DateTime?
+
+  /// Any access or refresh token issued before this instant is refused. Set
+  /// when an admin resets the password, so the reset actually ends sessions
+  /// that are already out there - access tokens carry no expiry of their own.
+  sessionsRevokedAt DateTime?
+
   // Approximate location derived from IP geolocation at registration/login.
   // Best-effort and may be null - never treat as precise or authoritative.
   country  String?
@@ -91,6 +157,11 @@ model User {
   preferences       UserPreference?
   ratingHistory     RatingHistory[]
   matchParticipants MatchParticipant[]
+
+  createdChallenges Challenge[] @relation("challengeAuthor")
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model UserProfile {
@@ -149,28 +220,106 @@ model UserPreference {
 }
 
 model Challenge {
-  id               String     @id @default(uuid())
-  title            String
-  description      String
-  difficulty       Difficulty @default(EASY)
-  starterCode      String
-  functionName     String
-  timeLimitSeconds Int        @default(300)
-  isPublished      Boolean    @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  id          String     @id @default(uuid())
+  title       String
+  /// URL-friendly identifier used by the player-facing API
+  /// (GET /api/challenges/:slug). Unique across every status.
+  slug        String     @unique
+  description String
+  difficulty  Difficulty @default(EASY)
+
+  problemType ChallengeProblemType @default(FUNCTION)
+
+  // ---- function contract -------------------------------------------------
+  functionName String
+  /// [{ name, type }] - ordered. Test-case inputs are objects keyed by these
+  /// names, and the runner rebuilds the positional argument list from this
+  /// order. Never trusted from the browser: validated by validateContract().
+  parameters   Json   @default("[]")
+  returnType   String @default("any")
+  starterCode  String
+
+  // ---- judging -----------------------------------------------------------
+  judgeMethod JudgeMethod @default(DEEP_EQUAL)
+
+  /// Executable challenge code. Only ever leaves the database towards the
+  /// isolated code runner - never towards a player-facing response, and never
+  /// executed inside the NestJS process.
+  customCheckerCode     String?
+  referenceSolutionCode String?
+  testGeneratorCode     String?
+
+  // ---- execution limits (per test case, enforced by the runner) ----------
+  timeLimitMs   Int @default(2000)
+  memoryLimitMb Int @default(128)
+  outputLimitKb Int @default(64)
+
+  /// Round duration in seconds: how long players get to write a solution and
+  /// what Round.endsAt is derived from. NOT an execution limit - see
+  /// timeLimitMs above and EXECUTION_TIMEOUT_SECONDS in RoundsService.
+  timeLimitSeconds Int @default(300)
+
+  // ---- lifecycle ---------------------------------------------------------
+  status       ChallengeStatus       @default(DRAFT)
+  creationMode ChallengeCreationMode @default(MANUAL)
+
+  validationStatus      ChallengeValidationStatus @default(NOT_CHECKED)
+  validatedAt           DateTime?
+  /// Serialised checks from the last validation run, for the admin UI.
+  validationChecks      Json?
+  /// Hash of every judging-relevant field at the moment validation passed.
+  /// publish() recomputes it and refuses if it moved, so "validate -> edit a
+  /// hidden test -> publish" cannot slip through even if an update path
+  /// forgets to reset validationStatus.
+  validationFingerprint String?
+
+  createdById String?
+  createdBy   User?   @relation("challengeAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+  archivedAt  DateTime?
 
   testCases ChallengeTestCase[]
   rounds    Round[]
+  tags      ChallengeTag[]
+
+  @@index([status])
+}
+
+model ChallengeTag {
+  id   String @id @default(uuid())
+  /// Lowercase, hyphenated. The display label lives in `label`.
+  slug  String @unique
+  label String
+
+  challenges Challenge[]
+
+  createdAt DateTime @default(now())
 }
 
 model ChallengeTestCase {
-  id             String    @id @default(uuid())
-  challenge      Challenge @relation(fields: [challengeId], references: [id])
-  challengeId    String
-  input          String
-  expectedOutput String
-  isHidden       Boolean   @default(false)
+  id          String    @id @default(uuid())
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  challengeId String
+
+  /// JSON object keyed by function-contract parameter name, e.g.
+  /// { "nums": [2,7,11,15], "target": 9 }. Stored structured rather than as a
+  /// string so the runner never has to eval() an input.
+  input          Json
+  /// Null is legitimate for CUSTOM_CHECKER (the checker decides) and for
+  /// generated tests whose expectation comes from the reference solution.
+  expectedOutput Json?
+
+  isHidden Boolean @default(true)
+  order    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([challengeId, order])
+  @@index([challengeId])
 }
 
 model Room {

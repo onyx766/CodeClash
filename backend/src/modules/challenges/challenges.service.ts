@@ -1,53 +1,68 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ChallengeStatus, Difficulty, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { ChallengeNotFoundException } from '../../common/exceptions/app.exception';
+import { toPublicChallenge } from '../admin-challenges/challenge.serializer';
 
+const RELATIONS = {
+  // Hidden test cases are excluded at the query level, not filtered afterwards:
+  // they never enter a player-facing object in the first place.
+  testCases: { where: { isHidden: false }, orderBy: { order: 'asc' } },
+  tags: true,
+} satisfies Prisma.ChallengeInclude;
+
+/**
+ * Player-facing challenge reads.
+ *
+ * Only PUBLISHED challenges are visible - drafts and archived challenges are
+ * invisible here - and every response goes through toPublicChallenge(), which
+ * omits hidden tests, the reference solution, the custom checker, the test
+ * generator and the validation record.
+ */
 @Injectable()
 export class ChallengesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(pickHidden = false) {
+  async listPublished(options: { difficulty?: Difficulty; tag?: string } = {}) {
     const challenges = await this.prisma.challenge.findMany({
-      include: { testCases: true },
+      where: {
+        status: ChallengeStatus.PUBLISHED,
+        ...(options.difficulty ? { difficulty: options.difficulty } : {}),
+        ...(options.tag ? { tags: { some: { slug: options.tag } } } : {}),
+      },
+      include: RELATIONS,
+      orderBy: { publishedAt: 'desc' },
+      take: 200,
     });
-    if (pickHidden) return challenges;
-    return challenges.map((c) => ({
-      ...c,
-      testCases: c.testCases.filter((t) => !t.isHidden).map((t) => ({ id: t.id, input: t.input })),
-    }));
+
+    return {
+      challenges: challenges.map((challenge) => {
+        const view = toPublicChallenge(challenge);
+        // The list view does not need starter code or sample tests.
+        const { publicTests, function: fn, ...summary } = view;
+        return {
+          ...summary,
+          publicTestCount: publicTests.length,
+          function: {
+            name: fn.name,
+            parameters: fn.parameters,
+            returnType: fn.returnType,
+          },
+        };
+      }),
+    };
   }
 
-  async findById(id: string, includeHidden = false) {
-    const c = await this.prisma.challenge.findUnique({ where: { id }, include: { testCases: true } });
-    if (!c) return null;
-    if (includeHidden) return c;
-    return { ...c, testCases: c.testCases.filter((t) => !t.isHidden).map((t) => ({ id: t.id, input: t.input })) };
-  }
-
-  async adminCreate(data: any) {
-    const { testCases = [], ...rest } = data;
-    const challenge = await this.prisma.challenge.create({ data: { ...rest } });
-    for (const tc of testCases) {
-      await this.prisma.challengeTestCase.create({ data: { challengeId: challenge.id, ...tc } });
-    }
-    return this.findById(challenge.id, true);
-  }
-
-  async adminUpdate(id: string, data: any) {
-    const { testCases, ...rest } = data;
-    await this.prisma.challenge.update({ where: { id }, data: { ...rest } });
-    if (testCases) {
-      // naive: delete existing and recreate
-      await this.prisma.challengeTestCase.deleteMany({ where: { challengeId: id } });
-      for (const tc of testCases) {
-        await this.prisma.challengeTestCase.create({ data: { challengeId: id, ...tc } });
-      }
-    }
-    return this.findById(id, true);
-  }
-
-  async adminDelete(id: string) {
-    await this.prisma.challengeTestCase.deleteMany({ where: { challengeId: id } });
-    await this.prisma.challenge.delete({ where: { id } });
-    return { success: true };
+  /** Accepts either the slug (preferred) or the uuid. */
+  async findPublished(idOrSlug: string) {
+    const challenge = await this.prisma.challenge.findFirst({
+      where: {
+        status: ChallengeStatus.PUBLISHED,
+        OR: [{ slug: idOrSlug }, { id: idOrSlug }],
+      },
+      include: RELATIONS,
+    });
+    if (!challenge) throw new ChallengeNotFoundException();
+    return { challenge: toPublicChallenge(challenge) };
   }
 }

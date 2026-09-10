@@ -3,9 +3,12 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { Request } from 'express';
+import { UserStatus } from '@prisma/client';
 import { UsersService } from '../../users/users.service';
+import { AccountBannedException } from '../../../common/exceptions/app.exception';
 import { ACCESS_TOKEN_COOKIE } from '../../../common/constants/auth.constants';
 import { AccessTokenPayload, AuthenticatedUser } from '../auth.types';
+import { isTokenRevoked } from '../session-revocation.util';
 
 function extractFromCookie(req: Request): string | null {
   const cookies = req.cookies as Record<string, string> | undefined;
@@ -42,6 +45,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       .findById(payload.sub)
       .catch(() => null);
     if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    // The role and standing are re-read from the database on every request
+    // rather than trusted from the token, so a ban (or a demotion) takes effect
+    // immediately instead of when the access token happens to expire.
+    if (user.status === UserStatus.BANNED) {
+      throw new AccountBannedException();
+    }
+
+    // Access tokens have no expiry, so this is the only thing that ends a
+    // session after an admin password reset.
+    if (isTokenRevoked(payload.iat, user.sessionsRevokedAt)) {
       throw new UnauthorizedException();
     }
 

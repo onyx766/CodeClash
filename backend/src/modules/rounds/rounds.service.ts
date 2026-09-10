@@ -1,39 +1,36 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { ConfigService } from '@nestjs/config';
 import { MatchStatus, MatchType } from '@prisma/client';
-import axios from 'axios';
+import type { Challenge, ChallengeTestCase } from '@prisma/client';
+import { createHash } from 'crypto';
 import { SocketGateway } from '../../socket/socket.gateway';
 import { SocketEvents } from '../../socket/socket.events';
 import { MatchProgressionService } from '../matches/match-progression.service';
+import { JudgeRunnerClient } from '../runner/judge-runner.client';
+import type {
+  FunctionParameter,
+  JsonValue,
+  RunnerJobPayload,
+  RunnerJobResult,
+  RunnerTestCase,
+} from '../challenges/challenge.types';
 import {
   NotAMatchParticipantException,
   RoundNotOpenException,
   AlreadySubmittedException,
 } from '../../common/exceptions/app.exception';
 
-/**
- * Wall-clock budget for executing one submission inside the sandbox.
- *
- * Deliberately NOT Challenge.timeLimitSeconds: that field is the round's
- * duration (how long players have to write a solution, default 300s) and is
- * what Round.endsAt is derived from. Handing it to the runner as an execution
- * timeout would let a single submission occupy a sandbox for the entire round.
- */
-const EXECUTION_TIMEOUT_SECONDS = 5;
+/** How many deterministic generated tests a scored submission adds, at most. */
+const GENERATED_TEST_COUNT = 5;
 
 @Injectable()
 export class RoundsService {
   constructor(
     private prisma: PrismaService,
-    private config: ConfigService,
     private socket: SocketGateway,
     private progression: MatchProgressionService,
+    private runner: JudgeRunnerClient,
   ) {}
-
-  private getRunnerUrl() {
-    return this.config.get<string>('CODE_RUNNER_URL') || 'http://localhost:5000';
-  }
 
   private loadRound(roundId: string) {
     return this.prisma.round.findUnique({
@@ -83,18 +80,17 @@ export class RoundsService {
       throw new RoundNotOpenException('This round has already finished.');
     }
 
-    const publicTests = round.challenge.testCases
-      .filter((t) => !t.isHidden)
-      .map((t) => ({ input: t.input, expectedOutput: t.expectedOutput }));
+    const publicTests = round.challenge.testCases.filter((t) => !t.isHidden);
 
-    const res = await axios.post(`${this.getRunnerUrl()}/run`, {
-      code,
-      testCases: publicTests,
-      functionName: round.challenge.functionName,
-      timeLimitSeconds: EXECUTION_TIMEOUT_SECONDS,
-      metadata: { userId, roundId, matchId: round.matchId },
-    });
-    return res.data;
+    const result = await this.runner.submit(
+      this.buildSubmissionJob(round.challenge, publicTests, code, {
+        userId,
+        roundId,
+        matchId: round.matchId,
+      }),
+    );
+
+    return this.toClientResult(result, publicTests);
   }
 
   /**
@@ -130,21 +126,20 @@ export class RoundsService {
     });
     if (existing) throw new AlreadySubmittedException();
 
-    const allTests = round.challenge.testCases.map((t) => ({
-      input: t.input,
-      expectedOutput: t.expectedOutput,
-    }));
-    const res = await axios.post(`${this.getRunnerUrl()}/run`, {
-      code,
-      testCases: allTests,
-      functionName: round.challenge.functionName,
-      timeLimitSeconds: EXECUTION_TIMEOUT_SECONDS,
-      metadata: { userId, roundId, matchId: round.matchId },
-    });
+    // Public AND hidden test cases. Hidden cases only ever travel
+    // NestJS -> runner; they are never part of any response to a browser.
+    const allTests = round.challenge.testCases;
+    const result = await this.runner.submit(
+      this.buildSubmissionJob(round.challenge, allTests, code, {
+        userId,
+        roundId,
+        matchId: round.matchId,
+      }),
+    );
 
-    const passedTests = Number(res.data?.passedTests ?? 0);
-    const totalTests = Number(res.data?.totalTests ?? allTests.length);
-    const runtimeMs = Math.round(Number(res.data?.runtimeMs ?? 0));
+    const passedTests = Number(result.passedTests ?? 0);
+    const totalTests = Number(result.totalTests ?? allTests.length);
+    const runtimeMs = Math.round(Number(result.runtimeMs ?? 0));
 
     // Scoring is correctness-only for now; speed/efficiency bonuses are a
     // later feature. Computed here from the runner's counts, never from
@@ -186,7 +181,112 @@ export class RoundsService {
         score,
         submittedAt: submission.submittedAt,
       },
-      results: res.data,
+      results: this.toClientResult(result, allTests),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // runner protocol
+  // -------------------------------------------------------------------------
+
+  /**
+   * Builds the SUBMISSION job. The player's code, the challenge's reference
+   * solution and its custom checker all travel to the runner as opaque strings;
+   * none of them is ever executed in this process.
+   */
+  private buildSubmissionJob(
+    challenge: Challenge,
+    testCases: ChallengeTestCase[],
+    sourceCode: string,
+    metadata: { userId: string; roundId: string; matchId: string },
+  ): RunnerJobPayload {
+    const tests: RunnerTestCase[] = [...testCases]
+      .sort((a, b) => a.order - b.order)
+      .map((testCase) => ({
+        id: testCase.id,
+        input: testCase.input as JsonValue,
+        expectedOutput:
+          testCase.expectedOutput === null
+            ? undefined
+            : (testCase.expectedOutput as JsonValue),
+        hidden: testCase.isHidden,
+        order: testCase.order,
+      }));
+
+    // Generated tests need both a deterministic generator and a reference
+    // solution to derive the expected output from, and are only added to a
+    // scored run - never to a practice run against public tests.
+    const useGenerator =
+      !!challenge.testGeneratorCode &&
+      !!challenge.referenceSolutionCode &&
+      tests.some((test) => test.hidden);
+
+    return {
+      jobType: 'SUBMISSION',
+      challengeId: challenge.id,
+      language: 'javascript',
+      sourceCode,
+      functionContract: {
+        functionName: challenge.functionName,
+        parameters: (challenge.parameters as unknown as FunctionParameter[]) ?? [],
+        returnType: challenge.returnType,
+      },
+      judgeMethod: challenge.judgeMethod,
+      referenceSolutionCode: challenge.referenceSolutionCode,
+      customCheckerCode: challenge.customCheckerCode,
+      generatorCode: challenge.testGeneratorCode,
+      limits: {
+        timeLimitMs: challenge.timeLimitMs,
+        memoryLimitMb: challenge.memoryLimitMb,
+        outputLimitKb: challenge.outputLimitKb,
+      },
+      tests,
+      generatorSeeds: useGenerator
+        ? this.deterministicSeeds(`${challenge.id}:${metadata.roundId}`)
+        : undefined,
+      metadata,
+    };
+  }
+
+  /**
+   * Seeds derived from the challenge and round, so both players in a round face
+   * exactly the same generated tests and a re-run reproduces them.
+   */
+  private deterministicSeeds(key: string): number[] {
+    const digest = createHash('sha256').update(key).digest();
+    return Array.from({ length: GENERATED_TEST_COUNT }, (_, index) =>
+      digest.readUInt32BE(index * 4),
+    );
+  }
+
+  /**
+   * Player-safe view of a runner result. Hidden tests are reduced to a
+   * pass/fail status with no input, no expected value and no message - the
+   * message can contain checker output that describes the expectation.
+   */
+  private toClientResult(
+    result: RunnerJobResult,
+    testCases: ChallengeTestCase[],
+  ) {
+    const publicOrder = new Map(
+      testCases.filter((t) => !t.isHidden).map((t) => [t.id, t.order]),
+    );
+
+    return {
+      passedTests: result.passedTests ?? 0,
+      totalTests: result.totalTests ?? testCases.length,
+      runtimeMs: result.runtimeMs ?? 0,
+      results: (result.tests ?? []).map((test) => ({
+        hidden: test.hidden,
+        // Public tests are identifiable so the UI can line them up with the
+        // samples it already has; hidden ones stay anonymous.
+        order: test.hidden ? null : (publicOrder.get(test.testId) ?? test.order),
+        status: test.status,
+        passed: test.status === 'PASSED',
+        runtimeMs: test.runtimeMs,
+        memoryKb: test.memoryKb ?? null,
+        message: test.hidden ? null : (test.message ?? null),
+      })),
     };
   }
 }

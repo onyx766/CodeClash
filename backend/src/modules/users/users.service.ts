@@ -17,10 +17,25 @@ export class UsersService {
         email: true,
         role: true,
         createdAt: true,
+        // Included so the JWT strategy can reject a token that belongs to an
+        // account banned - or whose sessions were revoked - after it was issued.
+        status: true,
+        sessionsRevokedAt: true,
       },
     });
     if (!user) throw new UserNotFoundException();
     return user;
+  }
+
+  /**
+   * Stamps the account as having just authenticated. Drives the admin
+   * console's "Last Active" column; never part of a user-editable DTO.
+   */
+  async touchLastActive(id: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id },
+      data: { lastActiveAt: new Date() },
+    });
   }
 
   async findByEmail(email: string) {

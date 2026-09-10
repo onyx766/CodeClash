@@ -305,7 +305,11 @@ export default function MatchPage() {
                 Function
               </p>
               <code className="rounded bg-slate-100 px-2 py-1 text-xs">
-                {round.challenge.functionName}
+                {round.challenge.functionName}(
+                {(round.challenge.parameters ?? [])
+                  .map((p: { name: string }) => p.name)
+                  .join(", ")}
+                )
               </code>
             </div>
             {round.challenge.sampleTestCases.length > 0 && (
@@ -319,7 +323,9 @@ export default function MatchPage() {
                       key={i}
                       className="overflow-x-auto rounded bg-slate-50 p-2 text-xs"
                     >
-                      {`in:  ${t.input}\nout: ${t.expectedOutput}`}
+                      {/* input/expectedOutput are structured JSON, not strings:
+                          input is an object keyed by parameter name. */}
+                      {`in:  ${JSON.stringify(t.input)}\nout: ${JSON.stringify(t.expectedOutput)}`}
                     </pre>
                   ))}
                 </div>

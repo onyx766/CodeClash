@@ -15,12 +15,27 @@ async function bootstrap() {
   // Comma-separated so a dev can browse via both localhost and a LAN/VPN IP
   // (e.g. "http://localhost:3000,http://198.18.9.78:3000") without the
   // browser rejecting cross-origin cookies.
-  const frontendUrls = (
-    configService.get<string>('FRONTEND_URL') || 'http://localhost:3000'
-  )
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean);
+  const splitOrigins = (value: string | undefined, fallback: string) =>
+    (value || fallback)
+      .split(',')
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+  // Two allowlists, one CORS config: the player frontend and the separate
+  // admin console (admin/, port 3001 by default). Both need credentials for
+  // the httpOnly auth cookies, which is exactly why `origin: '*'` is never an
+  // option here.
+  const allowedOrigins = [
+    ...splitOrigins(
+      configService.get<string>('FRONTEND_URL'),
+      'http://localhost:3000',
+    ),
+    ...splitOrigins(
+      configService.get<string>('ADMIN_FRONTEND_URL'),
+      'http://localhost:3001,http://localhost:7662',
+    ),
+  ];
+  const frontendUrls = [...new Set(allowedOrigins)];
   const port =
     configService.get<number>('PORT') || Number(process.env.PORT) || 4000;
 
@@ -33,6 +48,14 @@ async function bootstrap() {
   }
 
   app.use(cookieParser());
+
+  // Challenge import posts a whole challenge document as JSON, so it needs more
+  // headroom than the 100kb every other endpoint gets. Mounted BEFORE the
+  // global parser so it is the one that runs for this path; the ceiling is set
+  // just above MAX_IMPORT_BYTES (512kb) so the friendly IMPORT_FILE_TOO_LARGE
+  // check in ChallengeImportService is what a user actually hits.
+  app.use('/api/admin/challenges/import', json({ limit: '600kb' }));
+
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
 

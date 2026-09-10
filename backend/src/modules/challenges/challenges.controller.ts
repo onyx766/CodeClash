@@ -1,50 +1,31 @@
-import { Body, Controller, Get, Param, Post, UseGuards, Patch, Delete } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { Difficulty } from '@prisma/client';
 import { ChallengesService } from './challenges.service';
-import { CreateChallengeDto } from './dto/create-challenge.dto';
-import { UpdateChallengeDto } from './dto/update-challenge.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 
+/**
+ * Public challenge catalogue.
+ *
+ * Authoring lives in AdminChallengesController (`/api/admin/challenges`) behind
+ * JwtAuthGuard + RolesGuard - deliberately not here, so no admin surface is
+ * reachable through the player-facing service.
+ */
+@ApiTags('challenges')
 @Controller('challenges')
 export class ChallengesController {
-  constructor(private svc: ChallengesService) {}
+  constructor(private readonly challenges: ChallengesService) {}
 
   @Get()
-  async list() {
-    return this.svc.findAll(false);
+  list(@Query('difficulty') difficulty?: string, @Query('tag') tag?: string) {
+    const parsed =
+      difficulty && Object.values(Difficulty).includes(difficulty as Difficulty)
+        ? (difficulty as Difficulty)
+        : undefined;
+    return this.challenges.listPublished({ difficulty: parsed, tag: tag?.slice(0, 64) });
   }
 
-  @Get(':id')
-  async get(@Param('id') id: string) {
-    return this.svc.findById(id, false);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  @Get('/admin/all')
-  async adminList() {
-    return this.svc.findAll(true);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  @Post('/admin')
-  async create(@Body() body: CreateChallengeDto) {
-    return this.svc.adminCreate(body as any);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  @Patch('/admin/:id')
-  async update(@Param('id') id: string, @Body() body: UpdateChallengeDto) {
-    return this.svc.adminUpdate(id, body as any);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
-  @Delete('/admin/:id')
-  async del(@Param('id') id: string) {
-    return this.svc.adminDelete(id);
+  @Get(':idOrSlug')
+  get(@Param('idOrSlug') idOrSlug: string) {
+    return this.challenges.findPublished(idOrSlug);
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { MatchType } from '@prisma/client';
+import { ChallengeStatus, MatchType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
@@ -35,7 +35,7 @@ export class MatchesService {
     // pick challenges
     const totalRounds = 3;
     const challenges = await this.prisma.challenge.findMany({
-      where: { isPublished: true },
+      where: { status: ChallengeStatus.PUBLISHED },
     });
     if (challenges.length < totalRounds)
       throw new BadRequestException('Not enough published challenges');
@@ -184,15 +184,27 @@ export class MatchesService {
             ),
             challenge: {
               id: currentRound.challenge.id,
+              slug: currentRound.challenge.slug,
               title: currentRound.challenge.title,
               description: currentRound.challenge.description,
               difficulty: currentRound.challenge.difficulty,
               starterCode: currentRound.challenge.starterCode,
               functionName: currentRound.challenge.functionName,
+              // The calling convention: a test case's input is an object keyed
+              // by these names, in this order.
+              parameters: currentRound.challenge.parameters,
+              returnType: currentRound.challenge.returnType,
               timeLimitSeconds: currentRound.challenge.timeLimitSeconds,
+              limits: {
+                timeLimitMs: currentRound.challenge.timeLimitMs,
+                memoryLimitMb: currentRound.challenge.memoryLimitMb,
+                outputLimitKb: currentRound.challenge.outputLimitKb,
+              },
               // Public samples only - hidden cases are filtered in the query
-              // above so they cannot reach the browser.
+              // above so they cannot reach the browser. The reference solution,
+              // custom checker and generator are never selected at all.
               sampleTestCases: currentRound.challenge.testCases.map((t) => ({
+                order: t.order,
                 input: t.input,
                 expectedOutput: t.expectedOutput,
               })),

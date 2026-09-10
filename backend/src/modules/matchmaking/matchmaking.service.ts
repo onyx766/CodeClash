@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MatchStatus, MatchType } from '@prisma/client';
+import { ChallengeStatus, MatchStatus, MatchType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
@@ -425,7 +425,9 @@ export class MatchmakingService {
    * READY - this always runs exactly once per match (the claim guarantees
    * only one caller ever reaches here). */
   private async startQuickMatch(matchId: string, participantUserIds: string[], totalRounds: number) {
-    const pool = await this.prisma.challenge.findMany({ where: { isPublished: true } });
+    const pool = await this.prisma.challenge.findMany({
+      where: { status: ChallengeStatus.PUBLISHED },
+    });
     if (pool.length < totalRounds) {
       await this.prisma.match.update({
         where: { id: matchId },

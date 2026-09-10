@@ -62,6 +62,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    // body-parser rejects an oversized body before any controller runs, and
+    // throws a plain Error rather than an HttpException. Without this it would
+    // surface as an opaque 500.
+    if (
+      typeof exception === 'object' &&
+      exception !== null &&
+      (exception as { type?: string }).type === 'entity.too.large'
+    ) {
+      response.status(HttpStatus.PAYLOAD_TOO_LARGE).send({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'The request body is too large.',
+        },
+      });
+      return;
+    }
+
     this.logger.error(exception instanceof Error ? exception.stack : exception);
 
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).send({

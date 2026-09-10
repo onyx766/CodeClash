@@ -27,6 +27,12 @@ import { AppService } from './app.service';
         // Comma-separated list of allowed CORS origins (e.g. localhost plus
         // a LAN/VPN IP for browsing from another device in dev).
         FRONTEND_URL: Joi.string().default('http://localhost:3000'),
+        // Origins for the separate admin console (admin/, a second Next.js
+        // app). Kept apart from FRONTEND_URL so the player frontend and the
+        // admin console can be locked to different hosts in production.
+        ADMIN_FRONTEND_URL: Joi.string().default(
+          'http://localhost:3001,http://localhost:7662',
+        ),
         TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
         GEOLOCATION_PROVIDER: Joi.string()
           .valid('ip-api', 'ipapi')
@@ -65,6 +71,17 @@ import { AppService } from './app.service';
           .default(1800),
         // How long both players have to confirm ready after a match is found.
         MATCH_READY_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(10),
+
+        // Isolated code runner (see code-runner/). Every submission,
+        // reference solution, custom checker and generator is executed there.
+        CODE_RUNNER_URL: Joi.string().default('http://localhost:5000'),
+
+        // Optional AI challenge-generation provider. When unset, the admin
+        // console's AI mode reports itself as unavailable rather than
+        // fabricating a challenge.
+        AI_SERVICE_URL: Joi.string().allow('').optional(),
+        AI_SERVICE_API_KEY: Joi.string().allow('').optional(),
+        AI_SERVICE_TIMEOUT_MS: Joi.number().integer().min(1000).default(60_000),
       }),
     }),
     ScheduleModule.forRoot(),
@@ -76,6 +93,8 @@ import { AppService } from './app.service';
     require('./modules/users/users.module').UsersModule,
     require('./modules/auth/auth.module').AuthModule,
     require('./modules/challenges/challenges.module').ChallengesModule,
+    require('./modules/admin-challenges/admin-challenges.module')
+      .AdminChallengesModule,
     require('./modules/rooms/rooms.module').RoomsModule,
     require('./modules/invitations/invitations.module').InvitationsModule,
     require('./socket/socket.module').SocketModule,

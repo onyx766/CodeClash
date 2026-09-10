@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import type { StringValue } from 'ms';
 import {
   hashPassword,
@@ -9,6 +9,7 @@ import {
 } from '../../common/security/password.util';
 import { isLocalOrPrivateIp } from '../../common/utils/client-ip.util';
 import {
+  AccountBannedException,
   EmailAlreadyExistsException,
   InvalidCredentialsException,
   UnauthenticatedException,
@@ -29,6 +30,7 @@ interface UserPublicFields {
   email: string;
   role: Role;
   createdAt: Date;
+  status: UserStatus;
 }
 
 @Injectable()
@@ -93,8 +95,19 @@ export class AuthService {
       throw new InvalidCredentialsException();
     }
 
+    // Checked only after the password, so a banned account is indistinguishable
+    // from a wrong password to anyone who does not already know the password.
+    if (user.status === UserStatus.BANNED) {
+      throw new AccountBannedException(
+        user.banReason
+          ? `This account has been suspended: ${user.banReason}`
+          : 'This account has been suspended.',
+      );
+    }
+
     const tokens = this.generateTokens(user);
 
+    await this.touchLastActive(user.id);
     await this.detectAndUpdateLocation(user.id, ip);
 
     return { user: this.toSafeUser(user), tokens };
@@ -122,8 +135,27 @@ export class AuthService {
       throw new UnauthenticatedException('Invalid or expired refresh token');
     }
 
+    // A ban applies at the next refresh too, so an outstanding refresh token
+    // cannot be traded for a fresh access token after the account is banned.
+    if (record.status === UserStatus.BANNED) {
+      throw new AccountBannedException();
+    }
+
     const tokens = this.generateTokens(record);
+    await this.touchLastActive(record.id);
     return { user: this.toSafeUser(record), tokens };
+  }
+
+  /**
+   * Records that an account authenticated. Best-effort: this drives the admin
+   * console's "Last Active" column and must never fail a sign-in.
+   */
+  private async touchLastActive(userId: string): Promise<void> {
+    try {
+      await this.usersService.touchLastActive(userId);
+    } catch {
+      // ignored on purpose
+    }
   }
 
   private async findUserById(id: string): Promise<UserPublicFields | null> {

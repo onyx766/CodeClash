@@ -100,6 +100,41 @@ export class LastMasterRequiredException extends AppException {
   }
 }
 
+/**
+ * Returned on any authentication attempt by a banned account, and by the JWT
+ * strategy when an already-issued token belongs to one - so a ban takes effect
+ * on the next request rather than when the token happens to expire.
+ */
+export class AccountBannedException extends AppException {
+  constructor(message = 'This account has been suspended.') {
+    super('ACCOUNT_BANNED', message, HttpStatus.FORBIDDEN);
+  }
+}
+
+export class CannotModerateSelfException extends AppException {
+  constructor(message = 'You cannot perform this action on your own account.') {
+    super('CANNOT_MODERATE_SELF', message, HttpStatus.CONFLICT);
+  }
+}
+
+/**
+ * Moderation requires strictly outranking the target, so an ADMIN can never
+ * ban another ADMIN or a MASTER.
+ */
+export class InsufficientRankException extends AppException {
+  constructor(
+    message = 'You can only moderate accounts ranked below your own.',
+  ) {
+    super('INSUFFICIENT_RANK', message, HttpStatus.FORBIDDEN);
+  }
+}
+
+export class UserAlreadyInStateException extends AppException {
+  constructor(message = 'This account is already in that state.') {
+    super('USER_ALREADY_IN_STATE', message, HttpStatus.CONFLICT);
+  }
+}
+
 export class InvalidMatchStateException extends AppException {
   constructor(message = 'Rating cannot be applied to a match in this state.') {
     super('INVALID_MATCH_STATE', message, HttpStatus.CONFLICT);
@@ -211,6 +246,123 @@ export class AlreadySubmittedException extends AppException {
       'You have already submitted a solution for this round.',
       HttpStatus.CONFLICT,
     );
+  }
+}
+
+export class ChallengeNotFoundException extends AppException {
+  constructor() {
+    super('CHALLENGE_NOT_FOUND', 'Challenge not found.', HttpStatus.NOT_FOUND);
+  }
+}
+
+export class ChallengeSlugExistsException extends AppException {
+  constructor() {
+    super(
+      'CHALLENGE_SLUG_EXISTS',
+      'Another challenge already uses this slug.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class InvalidChallengeException extends AppException {
+  constructor(message = 'This challenge is not valid.') {
+    super('INVALID_CHALLENGE', message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class InvalidFunctionContractException extends AppException {
+  constructor(message = 'The function contract is not valid.') {
+    super('INVALID_FUNCTION_CONTRACT', message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class InvalidTestCaseException extends AppException {
+  constructor(message = 'A test case is not valid.') {
+    super('INVALID_TEST_CASE', message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class InvalidJudgeConfigurationException extends AppException {
+  constructor(message = 'The judge configuration is not valid.') {
+    super('INVALID_JUDGE_CONFIGURATION', message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class ChallengeValidationFailedException extends AppException {
+  constructor(message = 'Challenge validation could not be completed.') {
+    super(
+      'CHALLENGE_VALIDATION_FAILED',
+      message,
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}
+
+export class ChallengeNotValidatedException extends AppException {
+  constructor(
+    message = 'This challenge must pass validation before it can be published.',
+  ) {
+    super('CHALLENGE_NOT_VALIDATED', message, HttpStatus.CONFLICT);
+  }
+}
+
+export class ChallengeAlreadyPublishedException extends AppException {
+  constructor() {
+    super(
+      'CHALLENGE_ALREADY_PUBLISHED',
+      'This challenge is already published.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+/**
+ * Raised instead of deleting a challenge that historical rounds/submissions
+ * still point at. Archiving is the supported way to retire one.
+ */
+export class ChallengeInUseException extends AppException {
+  constructor(
+    message = 'This challenge has been played and cannot be deleted. Archive it instead.',
+  ) {
+    super('CHALLENGE_IN_USE', message, HttpStatus.CONFLICT);
+  }
+}
+
+/**
+ * A published challenge's judging surface (contract, tests, judge method,
+ * limits, executable code) is frozen so a live or historical match cannot have
+ * its grading changed underneath it.
+ */
+export class ChallengeLockedException extends AppException {
+  constructor(
+    message = 'A published challenge’s tests and judging cannot be edited. Archive it and publish a new version instead.',
+  ) {
+    super('CHALLENGE_LOCKED', message, HttpStatus.CONFLICT);
+  }
+}
+
+export class ImportInvalidJsonException extends AppException {
+  constructor(message = 'The uploaded file is not valid challenge JSON.') {
+    super('IMPORT_INVALID_JSON', message, HttpStatus.BAD_REQUEST);
+  }
+}
+
+export class ImportFileTooLargeException extends AppException {
+  constructor(message = 'The uploaded file is too large.') {
+    super('IMPORT_FILE_TOO_LARGE', message, HttpStatus.PAYLOAD_TOO_LARGE);
+  }
+}
+
+export class AiGenerationUnavailableException extends AppException {
+  constructor(message = 'AI generation is not configured.') {
+    super('AI_GENERATION_UNAVAILABLE', message, HttpStatus.SERVICE_UNAVAILABLE);
+  }
+}
+
+export class AiGenerationFailedException extends AppException {
+  constructor(message = 'AI generation failed.') {
+    super('AI_GENERATION_FAILED', message, HttpStatus.BAD_GATEWAY);
   }
 }
 

@@ -122,7 +122,11 @@ describe('AuthController', () => {
     );
 
     expect(res.cookie).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ success: true, user: safeUser, activeRoom: null });
+    expect(result).toEqual({
+      success: true,
+      user: safeUser,
+      activeRoom: null,
+    });
   });
 
   it('login returns the id/code of a room the user is already in', async () => {
@@ -166,7 +170,11 @@ describe('AuthController', () => {
 
     const result = await controller.me(req);
 
-    expect(result).toEqual({ success: true, user: safeUser, activeRoom: null });
+    expect(result).toEqual({
+      success: true,
+      user: { ...safeUser, role: Role.USER },
+      activeRoom: null,
+    });
   });
 
   it('me includes the id/code of a room the user is already in', async () => {
@@ -181,9 +189,19 @@ describe('AuthController', () => {
 
     expect(result).toEqual({
       success: true,
-      user: safeUser,
+      user: { ...safeUser, role: Role.USER },
       activeRoom: { id: 'room-1', code: 'ABC123' },
     });
+  });
+
+  it('me reports the caller their own role, so a console can render the right shell', async () => {
+    const user: AuthenticatedUser = { ...safeUser, role: Role.ADMIN };
+    const req = { user } as unknown as Parameters<typeof controller.me>[0];
+    roomsService.findActiveRoomForUser.mockResolvedValue(null);
+
+    const result = await controller.me(req);
+
+    expect(result.user.role).toBe(Role.ADMIN);
   });
 });
 

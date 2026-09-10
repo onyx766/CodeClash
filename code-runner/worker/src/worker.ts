@@ -27,11 +27,52 @@ async function ensureBase() {
 
 function wait(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Per-job container settings written by the runner service alongside job.json.
+ * Absent for legacy /run jobs, which keep the previous fixed limits.
+ */
+interface RunnerManifest {
+  entry: string;
+  memoryLimitMb: number;
+  hardTimeoutMs: number;
+  protocol: string;
+}
+
+const DEFAULT_MANIFEST: RunnerManifest = {
+  entry: 'executor.js',
+  memoryLimitMb: 256,
+  hardTimeoutMs: 60_000,
+  protocol: 'v1',
+};
+
+async function readManifest(subdir: string): Promise<RunnerManifest> {
+  try {
+    const raw = await fs.readFile(path.join(baseDir, subdir, 'runner.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      // Only ever one of the two executors we ship - never an arbitrary path
+      // from the queue payload.
+      entry: parsed.entry === 'judge-runtime.js' ? 'judge-runtime.js' : 'executor.js',
+      memoryLimitMb: Math.max(32, Math.min(Number(parsed.memoryLimitMb) || 256, 512)),
+      hardTimeoutMs: Math.max(1000, Math.min(Number(parsed.hardTimeoutMs) || 60_000, 180_000)),
+      protocol: String(parsed.protocol || 'v1'),
+    };
+  } catch (e) {
+    return DEFAULT_MANIFEST;
+  }
+}
+
 async function runJob(job: any) {
   const { jobId, subdir, metadata } = job;
   await ensureBase();
+  const manifest = await readManifest(subdir);
   // eslint-disable-next-line no-console
-  console.log(`Worker: running job ${jobId} in subdir ${subdir}`);
+  console.log(`Worker: running job ${jobId} (${manifest.protocol}) in subdir ${subdir}`);
+
+  // The container - not the vm module inside it - is the security boundary:
+  // no network, no capabilities, no privilege escalation, read-only rootfs,
+  // non-root user, and hard pid/memory/cpu ceilings. No secrets are passed in:
+  // the environment is whatever node:18-alpine ships with.
   const cmd = `docker run --rm -i \
     --network none \
     --cap-drop ALL \
@@ -40,19 +81,31 @@ async function runJob(job: any) {
     --read-only \
     --tmpfs /tmp:rw,size=50m \
     --user 65534 \
-    --memory 256m \
+    --memory ${manifest.memoryLimitMb}m \
+    --memory-swap ${manifest.memoryLimitMb}m \
     --cpus .5 \
     --mount source=runner-work,target=/work,readonly \
     -w /work/${subdir} \
-    node:18-alpine node executor.js`;
+    node:18-alpine node --max-old-space-size=${Math.max(16, manifest.memoryLimitMb - 32)} ${manifest.entry}`;
 
   return new Promise<void>((resolve) => {
     const proc = spawn('sh', ['-c', cmd], { env: process.env });
     let out = '';
+    let timedOut = false;
+    const killTimer = setTimeout(() => {
+      timedOut = true;
+      try { proc.kill('SIGKILL'); } catch (e) {}
+    }, manifest.hardTimeoutMs);
+
     proc.stdout.on('data', (d) => { out += d.toString(); });
     proc.stderr.on('data', (d) => { out += d.toString(); });
     proc.on('close', async (code) => {
-      const payload = { jobId, output: out, exitCode: code, metadata: metadata || null };
+      clearTimeout(killTimer);
+      // 137 is SIGKILL, which for these containers means the memory cgroup
+      // limit was hit. The runtime is already gone, so the limit is reported
+      // here instead of per test.
+      const limitExceeded = timedOut ? 'TIME' : code === 137 ? 'MEMORY' : null;
+      const payload = { jobId, output: out, exitCode: code, limitExceeded, metadata: metadata || null };
       try {
         await redis.lpush(`code_results:${jobId}`, JSON.stringify(payload));
         // index recent results for dashboard (include metadata)
