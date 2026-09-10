@@ -3,9 +3,11 @@ import { RoundsService } from './rounds.service';
 import { RoundsController } from './rounds.controller';
 import { DatabaseModule } from '../../database/database.module';
 import { ConfigModule } from '@nestjs/config';
+import { SocketModule } from '../../socket/socket.module';
+import { MatchesModule } from '../matches/matches.module';
 
 @Module({
-  imports: [DatabaseModule, ConfigModule],
+  imports: [DatabaseModule, ConfigModule, SocketModule, MatchesModule],
   providers: [RoundsService],
   controllers: [RoundsController],
 })

@@ -78,6 +78,12 @@ export const invitations = {
 export const matches = {
   start: (roomId: string) => request('POST', `/matches/start/${roomId}`),
   get: (id: string) => request('GET', `/matches/${id}`),
+  // Full playable state (challenge text, deadline, per-round results). This is
+  // how the match page recovers everything after a refresh or a reconnect,
+  // rather than depending on having been listening when round:start fired.
+  state: (id: string) => request('GET', `/matches/${id}/state`),
+  active: () => request('GET', '/matches/me/active'),
+  ready: (id: string) => request('POST', `/matches/${id}/ready`),
 };
 
 export const rounds = {

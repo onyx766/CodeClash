@@ -8,6 +8,11 @@ export const SocketEvents = {
   MATCH_START: 'match:start',
   ROUND_START: 'round:start',
   ROUND_UPDATE: 'round:update',
+  ROUND_END: 'round:end',
+  // Tells a player their opponent has locked in a submission, without leaking
+  // the opponent's code or score while the round is still open.
+  ROUND_OPPONENT_SUBMITTED: 'round:opponent-submitted',
+  MATCH_END: 'match:end',
   SUBMISSION_RESULT: 'submission:result',
   MATCHMAKING_SEARCHING: 'matchmaking:searching',
   MATCHMAKING_MATCH_FOUND: 'matchmaking:match-found',

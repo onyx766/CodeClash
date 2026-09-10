@@ -81,6 +81,7 @@ model User {
   submissions Submission[]
   // matches as winner relation
   wonMatches  Match[]      @relation("winner")
+  wonRounds   Round[]      @relation("roundWinner")
 
   sentInvitations     RoomInvitation[] @relation("invitationInviter")
   receivedInvitations RoomInvitation[] @relation("invitationInvitee")
@@ -284,9 +285,22 @@ model Round {
   challenge   Challenge @relation(fields: [challengeId], references: [id])
   challengeId String
   roundNumber Int
+  // Null until the round actually begins. Only round 1 is scheduled when the
+  // match starts - later rounds are scheduled by MatchProgressionService as
+  // the previous one closes, so their deadline is measured from when players
+  // can actually see the challenge (see startNextRound).
   startedAt   DateTime?
   endsAt      DateTime?
+  // Set exactly once, by the conditional claim in
+  // MatchProgressionService.closeRound. Non-null means the round is closed and
+  // no further submissions are accepted.
   finishedAt  DateTime?
+
+  // Server-decided round result. Null on a closed round means a draw (neither
+  // player submitted, or their score and submission time were identical).
+  // Never settable by client input.
+  winnerId String?
+  winner   User?   @relation("roundWinner", fields: [winnerId], references: [id])
 
   submissions Submission[]
 }
@@ -303,6 +317,14 @@ model Submission {
   runtimeMs   Int
   score       Int
   submittedAt DateTime @default(now())
+
+  // One scoring submission per player per round. A round closes as soon as
+  // both players have submitted, so a second attempt would have nothing left
+  // to decide. Enforced in the database as well as in RoundsService so two
+  // concurrent submits cannot slip both rows past the service-level check.
+  // The unlimited practice path is POST /rounds/:roundId/run, which never
+  // writes a Submission.
+  @@unique([roundId, userId])
 }
 
 // Only ever populated for ratingEligible matches - see RatingService. Private

@@ -188,6 +188,32 @@ export class ChallengePoolInsufficientException extends AppException {
   }
 }
 
+export class NotAMatchParticipantException extends AppException {
+  constructor() {
+    super(
+      'NOT_A_MATCH_PARTICIPANT',
+      'You are not a player in this match.',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
+export class RoundNotOpenException extends AppException {
+  constructor(message = 'This round is not accepting submissions.') {
+    super('ROUND_NOT_OPEN', message, HttpStatus.CONFLICT);
+  }
+}
+
+export class AlreadySubmittedException extends AppException {
+  constructor() {
+    super(
+      'ALREADY_SUBMITTED',
+      'You have already submitted a solution for this round.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
 export class MatchAlreadyFoundException extends AppException {
   constructor(public readonly matchId: string | null) {
     super(

@@ -439,8 +439,16 @@ export class MatchmakingService {
     const rounds: { id: string; roundNumber: number }[] = [];
     let roundNumber = 1;
     for (const challenge of picks) {
-      const startedAt = new Date(now.getTime() + (roundNumber - 1) * 1000);
-      const endsAt = new Date(startedAt.getTime() + (challenge.timeLimitSeconds || 300) * 1000);
+      // Only round 1 is scheduled here. Rounds 2+ are created unscheduled and
+      // get their startedAt/endsAt from MatchProgressionService.startNextRound
+      // when the previous round closes - otherwise their deadline would be
+      // measured from match start and they would already be expired by the
+      // time players ever saw them.
+      const isFirst = roundNumber === 1;
+      const startedAt = isFirst ? now : null;
+      const endsAt = isFirst
+        ? new Date(now.getTime() + (challenge.timeLimitSeconds || 300) * 1000)
+        : null;
       const round = await this.prisma.round.create({
         data: { matchId, challengeId: challenge.id, roundNumber, startedAt, endsAt },
       });

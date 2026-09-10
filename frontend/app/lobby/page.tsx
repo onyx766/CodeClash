@@ -47,8 +47,8 @@ export default function LobbyPage() {
     try {
       const res = await roomsApi.join(roomCode);
       router.push(`/rooms/${res.room.id}`);
-    } catch {
-      setError(`Could not join room ${roomCode}.`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : `Could not join room ${roomCode}.`);
     }
   };
 

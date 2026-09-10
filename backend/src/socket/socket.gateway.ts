@@ -33,6 +33,16 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   /**
+   * Push an event to every socket belonging to one user, regardless of which
+   * room they are currently viewing. Every client joins `user:<id>` on
+   * connect (see handleConnection), so this also reaches a second tab or a
+   * client that reconnected after a refresh.
+   */
+  emitToUser(userId: string, event: string, payload: unknown) {
+    this.server.to(`user:${userId}`).emit(event, payload);
+  }
+
+  /**
    * Auth is cookie-based (httpOnly access-token cookie), not a bearer token
    * the browser could hand us explicitly - so the handshake carries no
    * `auth.token` in normal operation. Read the cookie the browser attached to
@@ -95,10 +105,13 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async onRoomLeave(client: Socket, payload: { roomId: string }) {
     const user = client.data.user;
     if (!user) return;
-    // Actually removes the player (and, if they were the host or the last
-    // one in it, the room itself) - previously this only left the socket.io
-    // broadcast group, so cancelled/abandoned rooms never freed up the host.
-    await this.rooms.leaveRoom(user.id, payload.roomId);
+    // This only unsubscribes the socket from the room's live broadcasts (the
+    // room page emits it on every unmount, including plain navigation away
+    // while still wanting to keep the room open). Actually leaving/cancelling
+    // a room is a deliberate action handled by POST /rooms/:id/leave - if
+    // this also called rooms.leaveRoom(), merely navigating away from the
+    // room page as host would delete the room out from under the other
+    // player still trying to join it.
     client.leave(`room:${payload.roomId}`);
     const room = await this.prisma.room.findUnique({ where: { id: payload.roomId }, include: { players: { include: { user: true } } } });
     const r = this.redis.getClient();
