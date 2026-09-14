@@ -30,6 +30,8 @@ const LIST_SELECT = {
   bannedAt: true,
   banReason: true,
   country: true,
+  region: true,
+  city: true,
   stats: { select: { rating: true, matchesPlayed: true, wins: true, losses: true } },
 } satisfies Prisma.UserSelect;
 
@@ -77,6 +79,8 @@ function serialize(user: UserRow) {
     rating: user.stats?.rating ?? null,
     matchesPlayed: user.stats?.matchesPlayed ?? 0,
     country: user.country,
+    region: user.region,
+    city: user.city,
     createdAt: user.createdAt,
     lastActiveAt: user.lastActiveAt,
     bannedAt: user.bannedAt,
@@ -323,14 +327,25 @@ export class AdminUsersService {
       Object.entries(profile).filter(([, value]) => value !== undefined),
     );
 
+    // country/region/city live on User itself, not UserProfile.
+    const userFields = {
+      country: profileValue(dto.country),
+      region: profileValue(dto.region),
+      city: profileValue(dto.city),
+    };
+    const userFieldChanges = Object.fromEntries(
+      Object.entries(userFields).filter(([, value]) => value !== undefined),
+    );
+
     try {
       await this.prisma.$transaction(async (tx) => {
-        if (emailChanged || usernameChanged) {
+        if (emailChanged || usernameChanged || Object.keys(userFieldChanges).length) {
           await tx.user.update({
             where: { id: userId },
             data: {
               ...(emailChanged ? { email: dto.email } : {}),
               ...(usernameChanged ? { username: dto.username } : {}),
+              ...userFieldChanges,
             },
           });
         }

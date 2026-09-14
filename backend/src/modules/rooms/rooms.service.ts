@@ -1,7 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
-import { RoomAlreadyHostedException } from '../../common/exceptions/app.exception';
+import {
+  MatchAlreadyStartedException,
+  RoomAlreadyHostedException,
+} from '../../common/exceptions/app.exception';
 
 const ROOM_TTL_MS = 30 * 60 * 1000;
 
@@ -119,7 +122,7 @@ export class RoomsService {
       where: { id },
       include: {
         players: { include: { user: { select: { id: true, username: true } } } },
-        match: { select: { id: true } },
+        match: { select: { id: true, status: true } },
       },
     });
     if (!room) throw new NotFoundException('Room not found');
@@ -159,7 +162,7 @@ export class RoomsService {
   async findActiveRoomForUser(userId: string) {
     const roomPlayer = await this.prisma.roomPlayer.findFirst({
       where: { userId, room: { status: { not: 'FINISHED' } } },
-      include: { room: { include: { match: { select: { id: true } } } } },
+      include: { room: { include: { match: { select: { id: true, status: true } } } } },
       orderBy: { joinedAt: 'desc' },
     });
     if (!roomPlayer) return null;
@@ -177,8 +180,24 @@ export class RoomsService {
    * hosting a new one.
    */
   async leaveRoom(userId: string, roomId: string) {
-    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    const room = await this.prisma.room.findUnique({
+      where: { id: roomId },
+      include: { match: { select: { id: true } } },
+    });
     if (!room) return { success: true };
+
+    // Once a match exists the room is that match's record (Match.roomId), so
+    // it is never deleted. While the match runs, leaving is refused - giving
+    // up is the way out; afterwards the room is FINISHED and there is nothing
+    // left to leave.
+    if (room.match) {
+      if (room.status === 'IN_MATCH') {
+        throw new MatchAlreadyStartedException(
+          'This room’s match is in progress. Give up the match instead of leaving the room.',
+        );
+      }
+      return { success: true };
+    }
 
     await this.prisma.roomPlayer.deleteMany({ where: { roomId, userId } });
     const client = this.redis.getClient();

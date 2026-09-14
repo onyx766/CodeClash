@@ -6,6 +6,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { SocketGateway } from '../../socket/socket.gateway';
+import { MatchesService } from '../matches/matches.service';
 import { FakeRedis } from './matchmaking.test-utils';
 import { MatchmakingStatus } from './matchmaking.types';
 import {
@@ -36,8 +37,6 @@ type MockPrisma = {
     updateMany: jest.Mock;
   };
   user: { findMany: jest.Mock };
-  challenge: { findMany: jest.Mock };
-  round: { create: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -58,8 +57,6 @@ function makePrisma(): MockPrisma {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     user: { findMany: jest.fn().mockResolvedValue([]) },
-    challenge: { findMany: jest.fn().mockResolvedValue([]) },
-    round: { create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: `round-${data.roundNumber}`, ...data })) },
     $transaction: jest.fn().mockImplementation((cb) => cb(prismaTxHandle)),
   };
 }
@@ -73,6 +70,9 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
   prismaTxHandle = prisma;
   const redis = new FakeRedis();
   const rooms = { findActiveRoomForUser: jest.fn().mockResolvedValue(null) };
+  const matches = {
+    startQuickMatch: jest.fn().mockResolvedValue({ id: 'match-1', status: 'IN_PROGRESS' }),
+  };
   const emit = jest.fn();
   const socket = { server: { to: () => ({ emit }) } };
   const configValues: Record<string, number> = overrides?.config ?? {};
@@ -85,12 +85,13 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
       { provide: RedisService, useValue: { getClient: () => redis } },
       { provide: RoomsService, useValue: rooms },
       { provide: SocketGateway, useValue: socket },
+      { provide: MatchesService, useValue: matches },
       { provide: ConfigService, useValue: config },
     ],
   }).compile();
 
   const service = module.get(MatchmakingService);
-  return { service, prisma, redis, rooms, emit };
+  return { service, prisma, redis, rooms, matches, emit };
 }
 
 describe('MatchmakingService', () => {
@@ -386,7 +387,6 @@ describe('MatchmakingService', () => {
         id: 'match-1',
         type: 'QUICK_MATCH',
         status: 'PENDING_READY',
-        totalRounds: 3,
         participants: [
           { matchId: 'match-1', userId: 'a', readyAt: null },
           { matchId: 'match-1', userId: 'b', readyAt: null },
@@ -403,7 +403,7 @@ describe('MatchmakingService', () => {
     });
 
     it('does not start the match when only one participant is ready', async () => {
-      const { service, prisma } = await buildService();
+      const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
       prisma.matchParticipant.findMany.mockResolvedValue([
         { matchId: 'match-1', userId: 'a', readyAt: new Date() },
@@ -414,7 +414,7 @@ describe('MatchmakingService', () => {
 
       expect(result).toEqual({ matchId: 'match-1', status: 'PENDING_READY' });
       expect(prisma.match.updateMany).not.toHaveBeenCalled();
-      expect(prisma.challenge.findMany).not.toHaveBeenCalled();
+      expect(matches.startQuickMatch).not.toHaveBeenCalled();
     });
 
     it('is idempotent - re-readying an already-ready participant does not re-write it', async () => {
@@ -432,33 +432,27 @@ describe('MatchmakingService', () => {
       expect(prisma.matchParticipant.update).not.toHaveBeenCalled();
     });
 
-    it('transitions to IN_PROGRESS once both participants are ready, assigning the same challenges to both', async () => {
-      const { service, prisma, emit } = await buildService();
+    it('hands off to the shared battle engine once both participants are ready', async () => {
+      const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
       prisma.matchParticipant.findMany.mockResolvedValue([
         { matchId: 'match-1', userId: 'a', readyAt: new Date() },
         { matchId: 'match-1', userId: 'b', readyAt: new Date() },
       ]);
       prisma.match.updateMany.mockResolvedValue({ count: 1 });
-      prisma.challenge.findMany.mockResolvedValue([
-        { id: 'c1', timeLimitSeconds: 300 },
-        { id: 'c2', timeLimitSeconds: 300 },
-        { id: 'c3', timeLimitSeconds: 300 },
-      ]);
 
       const result = await service.handleReady('match-1', 'b');
 
-      expect(prisma.round.create).toHaveBeenCalledTimes(3);
-      expect(prisma.match.update).toHaveBeenCalledWith({
-        where: { id: 'match-1' },
-        data: expect.objectContaining({ status: 'IN_PROGRESS' }),
+      expect(prisma.match.updateMany).toHaveBeenCalledWith({
+        where: { id: 'match-1', status: 'PENDING_READY' },
+        data: { status: 'READY' },
       });
+      expect(matches.startQuickMatch).toHaveBeenCalledWith('match-1');
       expect(result).toEqual({ matchId: 'match-1', status: 'IN_PROGRESS' });
-      expect(emit).toHaveBeenCalledWith('match:start', { matchId: 'match-1' });
     });
 
     it('only one of two concurrent both-ready requests actually starts the match', async () => {
-      const { service, prisma } = await buildService();
+      const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
       prisma.matchParticipant.findMany.mockResolvedValue([
         { matchId: 'match-1', userId: 'a', readyAt: new Date() },
@@ -466,11 +460,6 @@ describe('MatchmakingService', () => {
       ]);
       // Simulate the loser: its conditional update affects 0 rows.
       prisma.match.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
-      prisma.challenge.findMany.mockResolvedValue([
-        { id: 'c1', timeLimitSeconds: 300 },
-        { id: 'c2', timeLimitSeconds: 300 },
-        { id: 'c3', timeLimitSeconds: 300 },
-      ]);
 
       const [first, second] = await Promise.all([
         service.handleReady('match-1', 'a'),
@@ -479,7 +468,20 @@ describe('MatchmakingService', () => {
 
       const starts = [first, second].filter((r) => r.status === 'IN_PROGRESS');
       expect(starts).toHaveLength(1);
-      expect(prisma.round.create).toHaveBeenCalledTimes(3);
+      expect(matches.startQuickMatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates a failed battle start (e.g. too few challenges)', async () => {
+      const { service, prisma, matches } = await buildService();
+      prisma.match.findUnique.mockResolvedValue(match());
+      prisma.matchParticipant.findMany.mockResolvedValue([
+        { matchId: 'match-1', userId: 'a', readyAt: new Date() },
+        { matchId: 'match-1', userId: 'b', readyAt: new Date() },
+      ]);
+      prisma.match.updateMany.mockResolvedValue({ count: 1 });
+      matches.startQuickMatch.mockRejectedValue(new Error('INSUFFICIENT_BATTLE_CHALLENGES'));
+
+      await expect(service.handleReady('match-1', 'b')).rejects.toThrow('INSUFFICIENT_BATTLE_CHALLENGES');
     });
   });
 

@@ -6,6 +6,7 @@ import SiteHeader from "./layout/SiteHeader";
 import SiteFooter from "./layout/SiteFooter";
 import { AuthProvider } from "../hooks/useAuth";
 import useAuth from "../hooks/useAuth";
+import { ProfileProvider } from "../hooks/useProfile";
 
 const authRoutes = ["/login", "/register"];
 const guestRoutes = ["/"];
@@ -16,12 +17,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   const { user, activeRoom, loading } = useAuth();
   const isAuth = authRoutes.includes(pathname);
   const isGuest = guestRoutes.includes(pathname);
-  const hideHeader = pathname.startsWith("/rooms/");
+  // The room and battle pages bring their own full-screen chrome.
+  const hideHeader = pathname.startsWith("/rooms/") || pathname.startsWith("/match/");
   const variant = isAuth ? "auth" : user ? "app" : "guest";
 
+  // A player with an open room is sent back to it; once its match has started
+  // the room page forwards on to /match/:id. Never redirect away from a match.
   useEffect(() => {
     if (loading || !user || !activeRoom) return;
-    if (pathname.startsWith("/rooms/")) return;
+    if (pathname.startsWith("/rooms/") || pathname.startsWith("/match/")) return;
     router.replace(`/rooms/${activeRoom.id}`);
   }, [loading, user, activeRoom, pathname, router]);
 
@@ -37,7 +41,9 @@ function Shell({ children }: { children: React.ReactNode }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <Shell>{children}</Shell>
+      <ProfileProvider>
+        <Shell>{children}</Shell>
+      </ProfileProvider>
     </AuthProvider>
   );
 }

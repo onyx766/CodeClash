@@ -52,14 +52,20 @@ async function main() {
     });
   }
 
-  // A match plays totalRounds (3) distinct challenges, so the published pool
-  // must hold at least that many - otherwise startQuickMatch cancels the match
-  // with ChallengePoolInsufficientException. Keep this list at 3 or more.
+  // A battle plays MATCH_CHALLENGE_COUNT (5) distinct challenges, preferring
+  // 2 EASY / 2 MEDIUM / 1 HARD, so keep at least that many eligible ones here -
+  // otherwise a match refuses to start with INSUFFICIENT_BATTLE_CHALLENGES.
+  // Every challenge needs at least one hidden test to be eligible.
   //
-  // timeLimitSeconds is the ROUND duration: how long players get to write a
-  // solution, and what Round.endsAt is derived from. It is NOT an execution
-  // limit - those are timeLimitMs / memoryLimitMb / outputLimitKb, which the
-  // runner enforces per test case.
+  // These are seeded with validationStatus NOT_CHECKED (see below), and battles
+  // only use challenges that PASSED validation. Either run Validate Problem on
+  // each one from the admin console, or set MATCH_REQUIRE_VALIDATED_CHALLENGES
+  // =false for local development.
+  //
+  // timeLimitSeconds is a suggested solving time shown in the admin console;
+  // battles use one overall clock (MATCH_DURATION_MINUTES). It is NOT an
+  // execution limit - those are timeLimitMs / memoryLimitMb / outputLimitKb,
+  // which the runner enforces per test case.
   //
   // A test case's `input` is a JSON object keyed by the declared parameter
   // names; the runner rebuilds the positional argument list from `parameters`,
@@ -227,6 +233,142 @@ async function main() {
         { input: { n: 100 }, expectedOutput: 47, isHidden: true },
         { input: { n: 0 }, expectedOutput: 0, isHidden: true },
         { input: { n: 3 }, expectedOutput: 1, isHidden: true },
+      ],
+    },
+    {
+      title: 'Valid Parentheses',
+      slug: 'valid-parentheses',
+      description:
+        "Given a string containing only the characters '(', ')', '[', ']', '{' and '}', return true if every bracket is closed by the same type of bracket in the correct order, and false otherwise. An empty string is valid.",
+      difficulty: 'EASY',
+      functionName: 'solve',
+      parameters: [{ name: 's', type: 'string' }],
+      returnType: 'boolean',
+      starterCode: 'function solve(s) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(s) {\n' +
+        "  const pairs = { ')': '(', ']': '[', '}': '{' };\n" +
+        '  const stack = [];\n' +
+        '  for (const c of s) {\n' +
+        "    if (c === '(' || c === '[' || c === '{') stack.push(c);\n" +
+        '    else if (stack.pop() !== pairs[c]) return false;\n' +
+        '  }\n' +
+        '  return stack.length === 0;\n' +
+        '}\n',
+      tags: ['string', 'stack'],
+      testCases: [
+        { input: { s: '()' }, expectedOutput: true, isHidden: false },
+        { input: { s: '()[]{}' }, expectedOutput: true, isHidden: false },
+        { input: { s: '(]' }, expectedOutput: false, isHidden: true },
+        { input: { s: '([)]' }, expectedOutput: false, isHidden: true },
+        { input: { s: '{[]}' }, expectedOutput: true, isHidden: true },
+        { input: { s: '' }, expectedOutput: true, isHidden: true },
+        { input: { s: '((' }, expectedOutput: false, isHidden: true },
+      ],
+    },
+    {
+      title: 'Maximum Subarray',
+      slug: 'maximum-subarray',
+      description:
+        'Given a non-empty array of integers, return the largest sum of any contiguous, non-empty subarray.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [{ name: 'nums', type: 'number[]' }],
+      returnType: 'number',
+      starterCode: 'function solve(nums) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(nums) {\n' +
+        '  let best = nums[0];\n' +
+        '  let current = nums[0];\n' +
+        '  for (let i = 1; i < nums.length; i++) {\n' +
+        '    current = Math.max(nums[i], current + nums[i]);\n' +
+        '    best = Math.max(best, current);\n' +
+        '  }\n' +
+        '  return best;\n' +
+        '}\n',
+      tags: ['array', 'dynamic-programming'],
+      testCases: [
+        { input: { nums: [-2, 1, -3, 4, -1, 2, 1, -5, 4] }, expectedOutput: 6, isHidden: false },
+        { input: { nums: [1] }, expectedOutput: 1, isHidden: false },
+        { input: { nums: [5, 4, -1, 7, 8] }, expectedOutput: 23, isHidden: true },
+        { input: { nums: [-3, -1, -2] }, expectedOutput: -1, isHidden: true },
+        { input: { nums: [0, 0, 0] }, expectedOutput: 0, isHidden: true },
+      ],
+    },
+    {
+      title: 'Longest Substring Without Repeating Characters',
+      slug: 'longest-substring-without-repeating-characters',
+      description:
+        'Given a string, return the length of the longest substring that contains no repeated characters.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [{ name: 's', type: 'string' }],
+      returnType: 'number',
+      starterCode: 'function solve(s) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(s) {\n' +
+        '  const last = new Map();\n' +
+        '  let start = 0;\n' +
+        '  let best = 0;\n' +
+        '  for (let i = 0; i < s.length; i++) {\n' +
+        '    if (last.has(s[i]) && last.get(s[i]) >= start) start = last.get(s[i]) + 1;\n' +
+        '    last.set(s[i], i);\n' +
+        '    best = Math.max(best, i - start + 1);\n' +
+        '  }\n' +
+        '  return best;\n' +
+        '}\n',
+      tags: ['string', 'sliding-window'],
+      testCases: [
+        { input: { s: 'abcabcbb' }, expectedOutput: 3, isHidden: false },
+        { input: { s: 'bbbbb' }, expectedOutput: 1, isHidden: false },
+        { input: { s: 'pwwkew' }, expectedOutput: 3, isHidden: true },
+        { input: { s: '' }, expectedOutput: 0, isHidden: true },
+        { input: { s: 'dvdf' }, expectedOutput: 3, isHidden: true },
+        { input: { s: 'abba' }, expectedOutput: 2, isHidden: true },
+      ],
+    },
+    {
+      title: 'Trapping Rain Water',
+      slug: 'trapping-rain-water',
+      description:
+        'Given an array of non-negative integers describing an elevation map where each bar has width 1, return how many units of rain water it can trap after raining.',
+      difficulty: 'HARD',
+      functionName: 'solve',
+      parameters: [{ name: 'height', type: 'number[]' }],
+      returnType: 'number',
+      starterCode: 'function solve(height) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(height) {\n' +
+        '  let left = 0;\n' +
+        '  let right = height.length - 1;\n' +
+        '  let leftMax = 0;\n' +
+        '  let rightMax = 0;\n' +
+        '  let water = 0;\n' +
+        '  while (left < right) {\n' +
+        '    if (height[left] < height[right]) {\n' +
+        '      leftMax = Math.max(leftMax, height[left]);\n' +
+        '      water += leftMax - height[left];\n' +
+        '      left++;\n' +
+        '    } else {\n' +
+        '      rightMax = Math.max(rightMax, height[right]);\n' +
+        '      water += rightMax - height[right];\n' +
+        '      right--;\n' +
+        '    }\n' +
+        '  }\n' +
+        '  return water;\n' +
+        '}\n',
+      tags: ['array', 'two-pointers'],
+      testCases: [
+        { input: { height: [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1] }, expectedOutput: 6, isHidden: false },
+        { input: { height: [4, 2, 0, 3, 2, 5] }, expectedOutput: 9, isHidden: false },
+        { input: { height: [] }, expectedOutput: 0, isHidden: true },
+        { input: { height: [1, 2, 3] }, expectedOutput: 0, isHidden: true },
+        { input: { height: [3, 0, 3] }, expectedOutput: 3, isHidden: true },
+        { input: { height: [5, 4, 1, 2] }, expectedOutput: 1, isHidden: true },
       ],
     },
   ];

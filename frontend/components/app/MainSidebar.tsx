@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BarChart3, Flame, Gem, LayoutGrid, Swords, Trophy, User, Users } from "lucide-react";
 import { SideNav, type SideItem } from "../layout/AppLayout";
-import { currentUser } from "../../lib/demo";
+import useProfile from "../../hooks/useProfile";
 
 const items: SideItem[] = [
   { href: "/lobby", label: "Lobby", icon: LayoutGrid },
@@ -37,23 +37,23 @@ function Sparkline() {
 }
 
 export function YourStatsCard() {
-  const u = currentUser;
+  const { stats } = useProfile();
+
   return (
     <div className="card p-4">
       <p className="eyebrow">Current Rating</p>
       <p className="mt-2 flex items-center gap-2 text-[24px] font-extrabold text-violet-300">
         <Gem size={19} className="text-violet-400" />
-        {u.rating}
+        {stats ? stats.rating : "—"}
       </p>
-      <p className="mt-1 text-[11px] text-dim">Top {u.topPercent}</p>
 
       <Sparkline />
 
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center">
         {[
-          { label: "Wins", value: u.wins },
-          { label: "Losses", value: u.losses },
-          { label: "Win Rate", value: `${u.winRate}%` },
+          { label: "Wins", value: stats?.wins ?? 0 },
+          { label: "Losses", value: stats?.losses ?? 0 },
+          { label: "Win Rate", value: `${stats?.winRate ?? 0}%` },
         ].map((s) => (
           <div key={s.label}>
             <p className="eyebrow !text-[9.5px]">{s.label}</p>
@@ -66,7 +66,7 @@ export function YourStatsCard() {
         <Flame size={17} className="text-amber" />
         <span>
           <span className="block text-[11px] text-dim">Best Streak</span>
-          <span className="block text-[13px] font-bold">{u.streak}</span>
+          <span className="block text-[13px] font-bold">{stats?.bestStreak ?? 0}</span>
           <span className="block text-[10.5px] text-dim">Matches</span>
         </span>
       </div>
@@ -76,8 +76,7 @@ export function YourStatsCard() {
         <span>
           <span className="block text-[11px] text-dim">Global Rank</span>
           <span className="block text-[13px] font-bold">
-            #{u.globalRank.toLocaleString()}{" "}
-            <span className="text-[11px] font-semibold text-emerald-400">↑ {u.rankDelta}</span>
+            {stats ? `#${stats.globalRank.toLocaleString()}` : "—"}
           </span>
         </span>
       </div>

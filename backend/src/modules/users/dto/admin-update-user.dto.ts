@@ -60,6 +60,27 @@ export class AdminUpdateUserDto {
   @IsUrl({}, { message: 'avatarUrl must be a valid URL' })
   @MaxLength(500, { message: 'avatarUrl must be at most 500 characters' })
   avatarUrl?: string;
+
+  // Normally derived from IP geolocation - editable here so an admin can
+  // correct a bad lookup. Same "empty string clears it" convention as the
+  // profile fields above.
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }: { value: string }) => value?.trim())
+  @MaxLength(100, { message: 'country must be at most 100 characters' })
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }: { value: string }) => value?.trim())
+  @MaxLength(100, { message: 'region must be at most 100 characters' })
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }: { value: string }) => value?.trim())
+  @MaxLength(100, { message: 'city must be at most 100 characters' })
+  city?: string;
 }
 
 export class AdminResetPasswordDto {

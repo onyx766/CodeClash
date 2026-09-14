@@ -166,7 +166,7 @@ export class AdminChallengesService {
     const existing = await this.loadOrThrow(id);
     const touchesJudging = this.touchesJudging(dto);
 
-    // A published challenge is being played, and Rounds point straight at it.
+    // A published challenge is being played, and MatchChallenges point straight at it.
     // Presentational edits stay allowed; anything that could change a verdict
     // does not. See docs in the module README.
     if (existing.status === ChallengeStatus.PUBLISHED && touchesJudging) {
@@ -335,12 +335,12 @@ export class AdminChallengesService {
   async remove(id: string) {
     const challenge = await this.loadOrThrow(id);
 
-    const roundCount = await this.prisma.round.count({
+    const matchCount = await this.prisma.matchChallenge.count({
       where: { challengeId: id },
     });
-    if (roundCount > 0) {
+    if (matchCount > 0) {
       throw new ChallengeInUseException(
-        `This challenge has been used in ${roundCount} round(s) and cannot be deleted. Archive it instead.`,
+        `This challenge has been used in ${matchCount} match(es) and cannot be deleted. Archive it instead.`,
       );
     }
     if (challenge.status === ChallengeStatus.PUBLISHED) {

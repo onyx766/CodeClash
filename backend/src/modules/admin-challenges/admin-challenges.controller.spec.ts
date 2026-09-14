@@ -6,6 +6,7 @@ import { AdminChallengesService } from './admin-challenges.service';
 import { ChallengeValidationService } from './challenge-validation.service';
 import { ChallengeImportService } from './challenge-import.service';
 import { ChallengeAiService } from './challenge-ai.service';
+import { ChallengeBattlePoolService } from './battle-pool.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -21,11 +22,14 @@ describe('AdminChallengesController', () => {
   const importer = new ChallengeImportService();
   const ai = { status: () => ({ configured: false }) } as unknown as ChallengeAiService;
 
+  const pool = {} as ChallengeBattlePoolService;
+
   const controller = new AdminChallengesController(
     challenges,
     validation,
     importer,
     ai,
+    pool,
   );
 
   describe('authorization', () => {

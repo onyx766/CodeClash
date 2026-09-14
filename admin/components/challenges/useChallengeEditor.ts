@@ -235,5 +235,7 @@ export function useChallengeEditor() {
     validate,
     publish,
     adoptChallenge,
+    /** Opens an existing challenge as saved (no toast). */
+    loadChallenge: applyChallenge,
   };
 }

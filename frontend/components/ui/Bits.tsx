@@ -29,6 +29,11 @@ export function Avatar({
   online?: boolean;
   className?: string;
 }) {
+  // Local placeholders (/img/avatars/...) go through next/image's optimizer;
+  // a user-supplied avatarUrl can be any https:// host, which next/image
+  // would refuse without that host in next.config's remotePatterns.
+  const isLocal = src.startsWith("/");
+
   return (
     <span
       className={`relative inline-block shrink-0 ${className}`}
@@ -39,6 +44,7 @@ export function Avatar({
         alt={alt}
         width={160}
         height={160}
+        unoptimized={!isLocal}
         className={`h-full w-full rounded-full object-cover ${
           ring ? "ring-2 ring-violet/70" : "ring-1 ring-line"
         }`}

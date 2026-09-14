@@ -72,9 +72,29 @@ import { AppService } from './app.service';
         // How long both players have to confirm ready after a match is found.
         MATCH_READY_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(10),
 
+        // Five-challenge battle engine (see modules/matches). Every match gets
+        // exactly MATCH_CHALLENGE_COUNT distinct challenges; the per-difficulty
+        // counts are preferences, with the nearest difficulty filling gaps.
+        MATCH_CHALLENGE_COUNT: Joi.number().integer().min(1).default(5),
+        MATCH_EASY_COUNT: Joi.number().integer().min(0).default(2),
+        MATCH_MEDIUM_COUNT: Joi.number().integer().min(0).default(2),
+        MATCH_HARD_COUNT: Joi.number().integer().min(0).default(1),
+        MATCH_EXPERT_COUNT: Joi.number().integer().min(0).default(0),
+        MATCH_DURATION_MINUTES: Joi.number().integer().min(1).default(30),
+        // Only challenges whose last validation run PASSED are eligible. Set
+        // false for local development with unvalidated seed data.
+        MATCH_REQUIRE_VALIDATED_CHALLENGES: Joi.boolean().default(true),
+        // After a match's deadline, how long to wait for submissions made
+        // before it to finish judging.
+        MATCH_JUDGE_GRACE_SECONDS: Joi.number().integer().min(0).default(60),
+
         // Isolated code runner (see code-runner/). Every submission,
         // reference solution, custom checker and generator is executed there.
         CODE_RUNNER_URL: Joi.string().default('http://localhost:5000'),
+        // Shared HMAC secret with the runner (or the Docker secret file
+        // /run/secrets/runner_secret). When set, every judge verdict must
+        // carry a valid signature - see JudgeRunnerClient.
+        RUNNER_SECRET: Joi.string().allow('').optional(),
 
         // Optional AI challenge-generation provider. When unset, the admin
         // console's AI mode reports itself as unavailable rather than
@@ -98,7 +118,7 @@ import { AppService } from './app.service';
     require('./modules/rooms/rooms.module').RoomsModule,
     require('./modules/invitations/invitations.module').InvitationsModule,
     require('./socket/socket.module').SocketModule,
-    require('./modules/rounds/rounds.module').RoundsModule,
+    require('./modules/submissions/submissions.module').SubmissionsModule,
     require('./modules/matchmaking/matchmaking.module').MatchmakingModule,
     require('./modules/matches/matches.module').MatchesModule,
     require('./modules/leaderboard/leaderboard.module').LeaderboardModule,

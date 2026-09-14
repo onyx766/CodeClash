@@ -21,6 +21,7 @@ import { AdminChallengesService } from './admin-challenges.service';
 import { ChallengeValidationService } from './challenge-validation.service';
 import { ChallengeImportService } from './challenge-import.service';
 import { ChallengeAiService } from './challenge-ai.service';
+import { ChallengeBattlePoolService } from './battle-pool.service';
 import { UpsertChallengeDto } from './dto/upsert-challenge.dto';
 import { ImportChallengeDto } from './dto/import-challenge.dto';
 import { AiGenerateChallengeDto } from './dto/ai-generate.dto';
@@ -43,6 +44,7 @@ export class AdminChallengesController {
     private readonly validation: ChallengeValidationService,
     private readonly importer: ChallengeImportService,
     private readonly ai: ChallengeAiService,
+    private readonly pool: ChallengeBattlePoolService,
   ) {}
 
   @Get()
@@ -64,6 +66,22 @@ export class AdminChallengesController {
   @Get('ai/status')
   aiStatus() {
     return this.ai.status();
+  }
+
+  /**
+   * Which challenges battles can draw from, why the rest are excluded, and
+   * whether the code runner is reachable. Declared before ':id' so the
+   * literal path wins.
+   */
+  @Get('battle-pool')
+  battlePool() {
+    return this.pool.overview();
+  }
+
+  /** Runs validation for every published challenge that has not passed. */
+  @Post('validate-published')
+  validatePublished() {
+    return this.pool.validatePublished();
   }
 
   @Get(':id')

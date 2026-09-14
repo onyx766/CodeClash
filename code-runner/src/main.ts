@@ -8,9 +8,39 @@ import { exec } from 'child_process';
 import util from 'util';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import { createHmac } from 'crypto';
 
 const execAsync = util.promisify(exec);
 const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
+
+/** Same secret and sources as the worker's /jobs/record signature. */
+function loadRunnerSecret(): string | undefined {
+  if (process.env.RUNNER_SECRET) return process.env.RUNNER_SECRET;
+  try {
+    return fsSync.readFileSync('/run/secrets/runner_secret', 'utf8').trim() || undefined;
+  } catch (e) {
+    return undefined;
+  }
+}
+const RUNNER_SECRET = loadRunnerSecret();
+
+/**
+ * Sends a judge verdict with an HMAC-SHA256 signature over
+ * `${jobId}.${timestamp}.${body}` so the backend can reject a verdict that did
+ * not come from this runner. Unsigned when no secret is configured.
+ */
+function sendSigned(res: express.Response, status: number, body: any) {
+  const bodyStr = JSON.stringify(body);
+  if (RUNNER_SECRET) {
+    const ts = String(Date.now());
+    const sig = createHmac('sha256', RUNNER_SECRET)
+      .update(`${body?.jobId ?? ''}.${ts}.${bodyStr}`)
+      .digest('hex');
+    res.setHeader('x-runner-timestamp', ts);
+    res.setHeader('x-runner-signature', sig);
+  }
+  res.status(status).type('application/json').send(bodyStr);
+}
 
 async function retry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): Promise<T> {
   let lastErr: any;
@@ -97,13 +127,13 @@ function extractJson(output: string): any | null {
 app.post('/v2/judge', async (req, res) => {
   const job = req.body || {};
   if (job.jobType !== 'CHALLENGE_VALIDATION' && job.jobType !== 'SUBMISSION') {
-    return res.status(400).json({ ok: false, error: 'Unknown jobType' });
+    return sendSigned(res, 400, { ok: false, error: 'Unknown jobType' });
   }
   if (!job.functionContract || !Array.isArray(job.tests)) {
-    return res.status(400).json({ ok: false, error: 'Invalid payload' });
+    return sendSigned(res, 400, { ok: false, error: 'Invalid payload' });
   }
   if (job.jobType === 'SUBMISSION' && typeof job.sourceCode !== 'string') {
-    return res.status(400).json({ ok: false, error: 'SUBMISSION requires sourceCode' });
+    return sendSigned(res, 400, { ok: false, error: 'SUBMISSION requires sourceCode' });
   }
 
   const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
@@ -150,7 +180,7 @@ app.post('/v2/judge', async (req, res) => {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Failed to enqueue judge job', e);
-      return res.status(500).json({ ok: false, jobId, error: 'failed to enqueue job' });
+      return sendSigned(res, 500, { ok: false, jobId, error: 'failed to enqueue job' });
     }
 
     const waitSeconds = Math.ceil(hardTimeoutMs / 1000) + 15;
@@ -158,10 +188,10 @@ app.post('/v2/judge', async (req, res) => {
     try {
       popped = (await redis.brpop(`code_results:${jobId}`, waitSeconds)) as [string, string] | null;
     } catch (e) {
-      return res.status(504).json({ ok: false, jobId, error: 'error waiting for runner' });
+      return sendSigned(res, 504, { ok: false, jobId, error: 'error waiting for runner' });
     }
     if (!popped || !popped[1]) {
-      return res.status(504).json({ ok: false, jobId, error: 'timeout waiting for runner' });
+      return sendSigned(res, 504, { ok: false, jobId, error: 'timeout waiting for runner' });
     }
 
     let envelope: any;
@@ -170,15 +200,15 @@ app.post('/v2/judge', async (req, res) => {
     // The worker maps a container OOM kill / hard timeout onto these, because
     // the runtime itself is gone by the time either happens.
     if (envelope.limitExceeded === 'MEMORY') {
-      return res.json(memoryOrTimeVerdict(jobId, job, 'MEMORY_LIMIT', 'Memory limit exceeded.'));
+      return sendSigned(res, 200, memoryOrTimeVerdict(jobId, job, 'MEMORY_LIMIT', 'Memory limit exceeded.'));
     }
     if (envelope.limitExceeded === 'TIME') {
-      return res.json(memoryOrTimeVerdict(jobId, job, 'TIME_LIMIT', 'Execution timed out.'));
+      return sendSigned(res, 200, memoryOrTimeVerdict(jobId, job, 'TIME_LIMIT', 'Execution timed out.'));
     }
 
     const parsed = extractJson(envelope.output);
     if (!parsed) {
-      return res.status(502).json({
+      return sendSigned(res, 502, {
         ok: false,
         jobId,
         jobType: job.jobType,
@@ -187,9 +217,9 @@ app.post('/v2/judge', async (req, res) => {
       });
     }
 
-    return res.json({ ...parsed, jobId });
+    return sendSigned(res, 200, { ...parsed, jobId });
   } catch (err: any) {
-    return res.status(500).json({ ok: false, jobId, error: String(err) });
+    return sendSigned(res, 500, { ok: false, jobId, error: String(err) });
   }
 });
 

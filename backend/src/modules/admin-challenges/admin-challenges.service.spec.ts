@@ -92,7 +92,7 @@ describe('AdminChallengesService', () => {
       },
       challengeTestCase: { deleteMany: jest.fn(), create: jest.fn() },
       challengeTag: { upsert: jest.fn() },
-      round: { count: jest.fn().mockResolvedValue(0) },
+      matchChallenge: { count: jest.fn().mockResolvedValue(0) },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
 
@@ -488,7 +488,7 @@ describe('AdminChallengesService', () => {
 
     it('deletes an unused draft', async () => {
       prisma.challenge.findUnique.mockResolvedValue(challengeRow());
-      prisma.round.count.mockResolvedValue(0);
+      prisma.matchChallenge.count.mockResolvedValue(0);
 
       await expect(service.remove('challenge-1')).resolves.toEqual({ success: true });
       expect(prisma.challenge.delete).toHaveBeenCalled();
@@ -496,7 +496,7 @@ describe('AdminChallengesService', () => {
 
     it('refuses to delete a challenge that has been played', async () => {
       prisma.challenge.findUnique.mockResolvedValue(challengeRow());
-      prisma.round.count.mockResolvedValue(4);
+      prisma.matchChallenge.count.mockResolvedValue(4);
 
       await expect(service.remove('challenge-1')).rejects.toBeInstanceOf(
         ChallengeInUseException,
@@ -504,11 +504,11 @@ describe('AdminChallengesService', () => {
       expect(prisma.challenge.delete).not.toHaveBeenCalled();
     });
 
-    it('refuses to delete a published challenge even with no rounds yet', async () => {
+    it('refuses to delete a published challenge even before it has been played', async () => {
       prisma.challenge.findUnique.mockResolvedValue(
         challengeRow({ status: ChallengeStatus.PUBLISHED }),
       );
-      prisma.round.count.mockResolvedValue(0);
+      prisma.matchChallenge.count.mockResolvedValue(0);
 
       await expect(service.remove('challenge-1')).rejects.toBeInstanceOf(
         ChallengeInUseException,

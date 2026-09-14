@@ -1,4 +1,4 @@
-import { getRatingTolerance, pickRandom } from './matchmaking.util';
+import { getRatingTolerance } from './matchmaking.util';
 
 const CONFIG = {
   rangeInitial: 100,
@@ -32,26 +32,5 @@ describe('getRatingTolerance', () => {
   it('returns the max range at 45s and beyond', () => {
     expect(getRatingTolerance(45, CONFIG)).toBe(600);
     expect(getRatingTolerance(600, CONFIG)).toBe(600);
-  });
-});
-
-describe('pickRandom', () => {
-  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
-
-  it('returns the requested count with no duplicates', () => {
-    for (let i = 0; i < 25; i++) {
-      const picks = pickRandom(items, 3);
-      expect(picks).toHaveLength(3);
-      expect(new Set(picks.map((p) => p.id)).size).toBe(3);
-    }
-  });
-
-  it('never returns more items than exist', () => {
-    const picks = pickRandom(items, 10);
-    expect(picks).toHaveLength(items.length);
-  });
-
-  it('returns an empty array for count 0', () => {
-    expect(pickRandom(items, 0)).toEqual([]);
   });
 });

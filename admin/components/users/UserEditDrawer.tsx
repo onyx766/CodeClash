@@ -45,6 +45,9 @@ interface DetailsForm {
   location: string;
   avatarUrl: string;
   bio: string;
+  country: string;
+  region: string;
+  city: string;
 }
 
 function formFrom(user: AdminUserDetail): DetailsForm {
@@ -55,6 +58,9 @@ function formFrom(user: AdminUserDetail): DetailsForm {
     location: user.profile.location ?? "",
     avatarUrl: user.profile.avatarUrl ?? "",
     bio: user.profile.bio ?? "",
+    country: user.country ?? "",
+    region: user.region ?? "",
+    city: user.city ?? "",
   };
 }
 
@@ -359,7 +365,6 @@ export function UserEditDrawer({
               <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Fact label="Joined">{formatDate(user.createdAt)}</Fact>
                 <Fact label="Last active">{formatRelative(user.lastActiveAt)}</Fact>
-                <Fact label="Country">{user.country ?? "—"}</Fact>
               </dl>
 
               {/* details */}
@@ -415,6 +420,42 @@ export function UserEditDrawer({
                       placeholder="Not set"
                       onChange={(event) =>
                         setForm({ ...form, location: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Country" htmlFor="edit-country">
+                    <TextInput
+                      id="edit-country"
+                      value={form.country}
+                      maxLength={100}
+                      disabled={!canEditDetails}
+                      placeholder="Not set"
+                      onChange={(event) =>
+                        setForm({ ...form, country: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Region" htmlFor="edit-region">
+                    <TextInput
+                      id="edit-region"
+                      value={form.region}
+                      maxLength={100}
+                      disabled={!canEditDetails}
+                      placeholder="Not set"
+                      onChange={(event) =>
+                        setForm({ ...form, region: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="City" htmlFor="edit-city">
+                    <TextInput
+                      id="edit-city"
+                      value={form.city}
+                      maxLength={100}
+                      disabled={!canEditDetails}
+                      placeholder="Not set"
+                      onChange={(event) =>
+                        setForm({ ...form, city: event.target.value })
                       }
                     />
                   </Field>

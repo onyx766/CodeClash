@@ -66,7 +66,7 @@ export default function AppLayout({
       <main className="order-1 min-w-0 flex-1 lg:order-none">{children}</main>
 
       {rail && (
-        <aside className="order-3 grid w-full gap-5 sm:grid-cols-2 lg:order-none xl:flex xl:w-[320px] xl:shrink-0 xl:grid-cols-1 xl:flex-col">
+        <aside className="order-3 grid w-full gap-5 sm:grid-cols-2 lg:order-none lg:flex lg:w-[320px] lg:shrink-0 lg:grid-cols-1 lg:flex-col">
           {rail}
         </aside>
       )}

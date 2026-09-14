@@ -3,6 +3,8 @@ import type {
   AdminChallenge,
   AdminChallengeSummary,
   AiGenerateRequest,
+  BatchValidationResponse,
+  BattlePool,
   ChallengeStatus,
   UpsertChallengePayload,
   ValidationCheck,
@@ -55,6 +57,14 @@ export const challengeService = {
   /** Runs the challenge through the isolated code runner, server-side. */
   validate: (id: string) =>
     request<ValidationResponse>("POST", `/admin/challenges/${id}/validate`),
+
+  /** Which challenges battles can use, why others cannot, and runner status. */
+  battlePool: () =>
+    request<{ pool: BattlePool }>("GET", "/admin/challenges/battle-pool"),
+
+  /** Validates every published challenge that has not passed yet. */
+  validatePublished: () =>
+    request<BatchValidationResponse>("POST", "/admin/challenges/validate-published"),
 
   publish: (id: string) =>
     request<{ challenge: AdminChallenge }>(

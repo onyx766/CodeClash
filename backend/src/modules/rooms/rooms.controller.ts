@@ -3,10 +3,14 @@ import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { JoinRoomDto } from './dto/join-room.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { MatchesService } from '../matches/matches.service';
 
 @Controller('rooms')
 export class RoomsController {
-  constructor(private svc: RoomsService) {}
+  constructor(
+    private svc: RoomsService,
+    private matches: MatchesService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -18,6 +22,13 @@ export class RoomsController {
   @Post('join')
   async join(@Request() req: any, @Body() body: JoinRoomDto) {
     return this.svc.joinRoomByCode(req.user.id, body.code);
+  }
+
+  /** Host only. Idempotent - a repeat returns the match already created. */
+  @UseGuards(JwtAuthGuard)
+  @Post(':code/start')
+  async start(@Request() req: any, @Param('code') code: string) {
+    return this.matches.startPrivateRoomMatch(code.trim().toUpperCase(), req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -137,6 +137,41 @@ export interface AdminChallengeSummary {
   publishedAt: string | null;
 }
 
+/** GET /api/admin/challenges/battle-pool - one row per challenge. */
+export interface BattlePoolChallenge {
+  id: string;
+  title: string;
+  slug: string;
+  difficulty: Difficulty;
+  status: ChallengeStatus;
+  validationStatus: ValidationStatus;
+  validatedAt: string | null;
+  hiddenTestCount: number;
+  eligible: boolean;
+  /** Why the challenge is excluded from battles; empty when eligible. */
+  problems: string[];
+}
+
+export interface BattlePool {
+  requireValidated: boolean;
+  challengeCount: number;
+  distribution: Record<Difficulty, number>;
+  durationMinutes: number;
+  eligibleCount: number;
+  eligibleByDifficulty: Record<Difficulty, number>;
+  canStartMatch: boolean;
+  needsValidationCount: number;
+  runner: { reachable: boolean; message: string; workers: number | null };
+  challenges: BattlePoolChallenge[];
+}
+
+export type BatchOutcome = "PASSED" | "FAILED" | "ERROR" | "SKIPPED";
+
+export interface BatchValidationResponse {
+  results: { id: string; title: string; outcome: BatchOutcome; message: string | null }[];
+  summary: Record<BatchOutcome, number>;
+}
+
 /** Request body shared by POST / PATCH /api/admin/challenges. */
 export interface UpsertChallengePayload {
   title?: string;
@@ -195,6 +230,8 @@ export interface AdminUser {
   rating: number | null;
   matchesPlayed: number;
   country: string | null;
+  region: string | null;
+  city: string | null;
   createdAt: string;
   /** Null when the account has never signed in. */
   lastActiveAt: string | null;
@@ -278,4 +315,7 @@ export interface AdminUpdateUserPayload {
   bio?: string;
   location?: string;
   avatarUrl?: string;
+  country?: string;
+  region?: string;
+  city?: string;
 }

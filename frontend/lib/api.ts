@@ -67,6 +67,8 @@ export const rooms = {
   leave: (id: string) => request('POST', `/rooms/${id}/leave`),
   invite: (roomId: string, username: string) =>
     request('POST', `/rooms/${roomId}/invite`, { username }),
+  // Host only. Idempotent: a repeat returns the match already started.
+  start: (code: string) => request('POST', `/rooms/${encodeURIComponent(code)}/start`),
 };
 
 export const invitations = {
@@ -75,20 +77,29 @@ export const invitations = {
   decline: (id: string) => request('POST', `/invitations/${id}/decline`),
 };
 
+// Five-challenge battle API. GET :id is how the battle page recovers its full
+// state after a refresh or reconnect; socket events only trigger a refetch.
 export const matches = {
-  start: (roomId: string) => request('POST', `/matches/start/${roomId}`),
   get: (id: string) => request('GET', `/matches/${id}`),
-  // Full playable state (challenge text, deadline, per-round results). This is
-  // how the match page recovers everything after a refresh or a reconnect,
-  // rather than depending on having been listening when round:start fired.
-  state: (id: string) => request('GET', `/matches/${id}/state`),
+  challenges: (id: string) => request('GET', `/matches/${id}/challenges`),
+  progress: (id: string) => request('GET', `/matches/${id}/progress`),
   active: () => request('GET', '/matches/me/active'),
+  history: (page = 1, pageSize = 10) =>
+    request('GET', `/matches/me/history?page=${page}&pageSize=${pageSize}`),
   ready: (id: string) => request('POST', `/matches/${id}/ready`),
+  giveUp: (id: string) => request('POST', `/matches/${id}/give-up`),
+  // Public sample tests only - never solves a challenge.
+  run: (matchId: string, matchChallengeId: string, code: string) =>
+    request('POST', `/matches/${matchId}/challenges/${matchChallengeId}/run`, { code }),
+  // Public + hidden tests; only the runner's ACCEPTED verdict solves.
+  submit: (matchId: string, matchChallengeId: string, code: string) =>
+    request('POST', `/matches/${matchId}/challenges/${matchChallengeId}/submit`, { code }),
 };
 
-export const rounds = {
-  run: (roundId: string, code: string) => request('POST', `/rounds/${roundId}/run`, { code }),
-  submit: (roundId: string, code: string) => request('POST', `/rounds/${roundId}/submit`, { code }),
+// Own profile: avatar, competitive stats, location. GET /users/me/profile.
+export const profile = {
+  me: () => request('GET', '/users/me/profile'),
+  update: (payload: Record<string, unknown>) => request('PATCH', '/users/me/profile', payload),
 };
 
 export const infra = {

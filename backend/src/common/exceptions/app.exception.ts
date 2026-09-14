@@ -213,39 +213,133 @@ export class UserStatsNotFoundException extends AppException {
   }
 }
 
-export class ChallengePoolInsufficientException extends AppException {
+/**
+ * The eligible pool cannot supply a full set of distinct battle challenges.
+ * A match is never started with fewer - see MatchSelectionService.
+ */
+export class InsufficientBattleChallengesException extends AppException {
   constructor() {
     super(
-      'CHALLENGE_POOL_INSUFFICIENT',
-      'Not enough published challenges to start the match.',
-      HttpStatus.CONFLICT,
+      'INSUFFICIENT_BATTLE_CHALLENGES',
+      'Not enough eligible challenges are available to start a match.',
+      HttpStatus.SERVICE_UNAVAILABLE,
     );
   }
 }
 
-export class NotAMatchParticipantException extends AppException {
+export class MatchAccessDeniedException extends AppException {
   constructor() {
     super(
-      'NOT_A_MATCH_PARTICIPANT',
+      'MATCH_ACCESS_DENIED',
       'You are not a player in this match.',
       HttpStatus.FORBIDDEN,
     );
   }
 }
 
-export class RoundNotOpenException extends AppException {
-  constructor(message = 'This round is not accepting submissions.') {
-    super('ROUND_NOT_OPEN', message, HttpStatus.CONFLICT);
+export class MatchNotActiveException extends AppException {
+  constructor(message = 'This match is not in progress.') {
+    super('MATCH_NOT_ACTIVE', message, HttpStatus.CONFLICT);
   }
 }
 
-export class AlreadySubmittedException extends AppException {
+export class MatchAlreadyFinishedException extends AppException {
   constructor() {
     super(
-      'ALREADY_SUBMITTED',
-      'You have already submitted a solution for this round.',
+      'MATCH_ALREADY_FINISHED',
+      'This match has already finished.',
       HttpStatus.CONFLICT,
     );
+  }
+}
+
+export class MatchAlreadyStartedException extends AppException {
+  constructor(message = 'This room’s match has already started.') {
+    super('MATCH_ALREADY_STARTED', message, HttpStatus.CONFLICT);
+  }
+}
+
+export class MatchExpiredException extends AppException {
+  constructor() {
+    super('MATCH_EXPIRED', 'Time is up for this match.', HttpStatus.CONFLICT);
+  }
+}
+
+export class MatchChallengeNotFoundException extends AppException {
+  constructor() {
+    super(
+      'MATCH_CHALLENGE_NOT_FOUND',
+      'This challenge is not part of the match.',
+      HttpStatus.NOT_FOUND,
+    );
+  }
+}
+
+export class AlreadySolvedException extends AppException {
+  constructor() {
+    super(
+      'ALREADY_SOLVED',
+      'You have already solved this challenge.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class PlayerAlreadyGaveUpException extends AppException {
+  constructor() {
+    super(
+      'PLAYER_ALREADY_GAVE_UP',
+      'You have already given up this match.',
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+
+export class RunnerUnavailableException extends AppException {
+  constructor() {
+    super(
+      'RUNNER_UNAVAILABLE',
+      'The code runner is unavailable. Please try again.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}
+
+export class RoomNotFoundException extends AppException {
+  constructor() {
+    super('ROOM_NOT_FOUND', 'Room not found.', HttpStatus.NOT_FOUND);
+  }
+}
+
+export class RoomAccessDeniedException extends AppException {
+  constructor() {
+    super(
+      'ROOM_ACCESS_DENIED',
+      'You are not a player in this room.',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
+export class RoomHostRequiredException extends AppException {
+  constructor() {
+    super(
+      'ROOM_HOST_REQUIRED',
+      'Only the room host can start the match.',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
+export class RoomNotReadyException extends AppException {
+  constructor(message = 'This room is not ready to start a match.') {
+    super('ROOM_NOT_READY', message, HttpStatus.CONFLICT);
+  }
+}
+
+export class RoomExpiredException extends AppException {
+  constructor() {
+    super('ROOM_EXPIRED', 'This room has expired.', HttpStatus.CONFLICT);
   }
 }
 
@@ -318,7 +412,7 @@ export class ChallengeAlreadyPublishedException extends AppException {
 }
 
 /**
- * Raised instead of deleting a challenge that historical rounds/submissions
+ * Raised instead of deleting a challenge that historical matches/submissions
  * still point at. Archiving is the supported way to retire one.
  */
 export class ChallengeInUseException extends AppException {

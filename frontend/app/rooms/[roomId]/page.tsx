@@ -21,7 +21,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { getSocket } from "../../../lib/socket";
-import { rooms, matches, ApiError } from "../../../lib/api";
+import { rooms, ApiError } from "../../../lib/api";
+import { ACTIVE_MATCH_STATUSES, type MatchStatus } from "../../../lib/battle";
 import useAuth from "../../../hooks/useAuth";
 import { currentUser } from "../../../lib/demo";
 import { Avatar, avatarForUserId } from "../../../components/ui/Bits";
@@ -41,6 +42,8 @@ type Room = {
   mode?: string;
   createdAt?: string;
   expiresAt?: string | null;
+  status?: string;
+  match?: { id: string; status: MatchStatus } | null;
   players: RoomPlayer[];
 };
 
@@ -61,6 +64,7 @@ export default function RoomPage() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const { user, clearActiveRoom } = useAuth();
   const router = useRouter();
@@ -69,7 +73,14 @@ export default function RoomPage() {
   useEffect(() => {
     rooms
       .get(roomId)
-      .then(setRoom)
+      .then((data: Room) => {
+        // The match has already started (e.g. after a refresh) - rejoin it.
+        if (data.match && ACTIVE_MATCH_STATUSES.includes(data.match.status)) {
+          router.replace(`/match/${data.match.id}`);
+          return;
+        }
+        setRoom(data);
+      })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) {
           clearActiveRoom();
@@ -77,6 +88,11 @@ export default function RoomPage() {
         }
       });
     const s = getSocket();
+    // Sent to both players' user channels when the host starts the match.
+    const onMatchStarted = (payload: { matchId?: string }) => {
+      if (payload?.matchId) router.push(`/match/${payload.matchId}`);
+    };
+    s.on("match:started", onMatchStarted);
     s.emit("room:join", { roomId });
     s.on("room:update", (payload: { room?: Room | null }) => {
       if (payload.room) {
@@ -91,6 +107,7 @@ export default function RoomPage() {
     return () => {
       s.emit("room:leave", { roomId });
       s.off("room:update");
+      s.off("match:started", onMatchStarted);
     };
   }, [roomId]);
 
@@ -127,12 +144,14 @@ export default function RoomPage() {
   };
 
   const start = async () => {
+    if (!room) return;
     setStarting(true);
+    setStartError("");
     try {
-      await matches.start(roomId);
-    } catch {
-      alert("Could not start the match.");
-    } finally {
+      const res = (await rooms.start(room.code)) as { match: { id: string } };
+      router.push(`/match/${res.match.id}`);
+    } catch (err) {
+      setStartError(err instanceof ApiError ? err.message : "Could not start the match.");
       setStarting(false);
     }
   };
@@ -319,6 +338,12 @@ export default function RoomPage() {
           })}
         </div>
       </section>
+
+      {startError && (
+        <p className="mt-2.5 shrink-0 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-200">
+          {startError}
+        </p>
+      )}
 
       <div className="mt-2.5 flex shrink-0 gap-2.5">
         {isHost && isFull && (

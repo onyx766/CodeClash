@@ -113,6 +113,7 @@ export function UsersTable({
               sortDir={sortDir}
               onSort={onSort}
             />
+            <th className="px-3 py-2.5 text-left eyebrow">Location</th>
             <SortableHeader
               label="Joined At"
               field="createdAt"
@@ -134,7 +135,7 @@ export function UsersTable({
         <tbody>
           {loading && users.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-4 py-14 text-center">
+              <td colSpan={9} className="px-4 py-14 text-center">
                 <span className="inline-flex items-center gap-2 text-[13px] text-dim">
                   <IconSpinner size={15} />
                   Loading users…
@@ -143,7 +144,7 @@ export function UsersTable({
             </tr>
           ) : users.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-4 py-14 text-center text-[13px] text-dim">
+              <td colSpan={9} className="px-4 py-14 text-center text-[13px] text-dim">
                 No users match these filters.
               </td>
             </tr>
@@ -229,6 +230,12 @@ export function UsersTable({
                         formatNumber(user.rating)
                       )}
                     </span>
+                  </td>
+
+                  <td className="px-3 py-2.5 text-[12.5px] text-muted">
+                    {[user.city, user.country].filter(Boolean).join(", ") || (
+                      <span className="text-dim">—</span>
+                    )}
                   </td>
 
                   <td className="px-3 py-2.5 text-[12.5px] text-muted">

@@ -1,53 +1,75 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MatchStatus } from '@prisma/client';
 import { RatingService } from './rating.service';
 import { PrismaService } from '../../database/prisma.service';
 import { InvalidMatchStateException } from '../../common/exceptions/app.exception';
+import { calculateEloChange, calculateEloDrawChange } from './elo.util';
 
-type MockPrisma = {
-  match: { findUnique: jest.Mock; update: jest.Mock };
-  userStats: { findUnique: jest.Mock; update: jest.Mock };
-  ratingHistory: { create: jest.Mock };
-  $transaction: jest.Mock;
-};
+const WINNER_ID = 'winner-1';
+const LOSER_ID = 'loser-1';
+const MATCH_ID = 'match-1';
+
+function makePrisma() {
+  const prisma: any = {
+    match: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    userStats: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+    ratingHistory: { create: jest.fn().mockResolvedValue({}) },
+    matchParticipant: {
+      update: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn(({ where }: any) =>
+        Promise.resolve({ ratingBefore: where.matchId_userId.userId === WINNER_ID ? 1500 : 1400 }),
+      ),
+    },
+    matchChallengeProgress: { count: jest.fn().mockResolvedValue(3) },
+  };
+  prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
+  return prisma;
+}
+
+function baseMatch(overrides: Record<string, unknown> = {}) {
+  return {
+    id: MATCH_ID,
+    type: 'PRIVATE_ROOM',
+    status: MatchStatus.FINISHED,
+    winnerId: WINNER_ID,
+    resultType: 'WIN',
+    ratingEligible: false,
+    ratingReason: 'PRIVATE_ROOM_CASUAL',
+    ratingProcessedAt: null,
+    participants: [
+      { userId: WINNER_ID, ratingBefore: 1500 },
+      { userId: LOSER_ID, ratingBefore: 1400 },
+    ],
+    ...overrides,
+  };
+}
+
+const stats = (rating: number, extra: Record<string, number> = {}) => ({
+  rating,
+  wins: 0,
+  losses: 0,
+  matchesPlayed: 0,
+  bestStreak: 0,
+  currentStreak: 0,
+  ...extra,
+});
 
 describe('RatingService', () => {
   let service: RatingService;
-  let prisma: MockPrisma;
+  let prisma: any;
 
-  const WINNER_ID = 'winner-1';
-  const LOSER_ID = 'loser-1';
-  const MATCH_ID = 'match-1';
+  const statsCall = (userId: string) =>
+    prisma.userStats.update.mock.calls.find((c: any[]) => c[0].where.userId === userId)?.[0].data;
 
-  function baseMatch(overrides: Partial<Record<string, any>> = {}) {
-    return {
-      id: MATCH_ID,
-      type: 'PRIVATE_ROOM',
-      status: MatchStatus.FINISHED,
-      winnerId: WINNER_ID,
-      ratingEligible: false,
-      ratingReason: 'PRIVATE_ROOM_CASUAL',
-      ratingProcessedAt: null,
-      room: { players: [{ userId: WINNER_ID }, { userId: LOSER_ID }] },
-      participants: [],
-      ...overrides,
-    };
-  }
-
-  beforeEach(async () => {
-    prisma = {
-      match: { findUnique: jest.fn(), update: jest.fn() },
-      userStats: { findUnique: jest.fn(), update: jest.fn() },
-      ratingHistory: { create: jest.fn() },
-      $transaction: jest.fn().mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops)),
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [RatingService, { provide: PrismaService, useValue: prisma }],
-    }).compile();
-
-    service = module.get(RatingService);
+  beforeEach(() => {
+    prisma = makePrisma();
+    prisma.userStats.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.userId === WINNER_ID ? stats(1500, { currentStreak: 2, bestStreak: 2 }) : stats(1400)),
+    );
+    service = new RatingService(prisma as PrismaService);
   });
 
   it('throws NotFoundException when the match does not exist', async () => {
@@ -62,182 +84,142 @@ describe('RatingService', () => {
     MatchStatus.CANCELLED,
     MatchStatus.ABANDONED,
     MatchStatus.EXPIRED,
-  ])('throws InvalidMatchStateException and applies no writes for status %s', async (status) => {
-    prisma.match.findUnique.mockResolvedValue(baseMatch({ status }));
-    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(
-      InvalidMatchStateException,
-    );
+  ])('refuses a %s match and writes nothing', async (status) => {
+    prisma.match.findUnique.mockResolvedValue(baseMatch({ status, ratingEligible: true }));
+    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(InvalidMatchStateException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.userStats.update).not.toHaveBeenCalled();
   });
 
   it('does not reprocess a match whose rating was already applied', async () => {
-    prisma.match.findUnique.mockResolvedValue(
-      baseMatch({ ratingProcessedAt: new Date('2026-01-01') }),
-    );
+    prisma.match.findUnique.mockResolvedValue(baseMatch({ ratingProcessedAt: new Date('2026-01-01') }));
 
     const result = await service.applyMatchRating(MATCH_ID);
 
-    expect(result).toEqual({ winnerChange: 0, loserChange: 0, alreadyProcessed: true });
+    expect(result).toEqual({ changes: {}, alreadyProcessed: true });
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.userStats.update).not.toHaveBeenCalled();
-    expect(prisma.ratingHistory.create).not.toHaveBeenCalled();
   });
 
-  it('throws when the match has no winner recorded', async () => {
+  it('throws when a WIN has no winner, or the winner is not a participant', async () => {
     prisma.match.findUnique.mockResolvedValue(baseMatch({ winnerId: null }));
-    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(
-      InvalidMatchStateException,
-    );
+    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(InvalidMatchStateException);
+
+    prisma.match.findUnique.mockResolvedValue(baseMatch({ winnerId: 'someone-else' }));
+    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(InvalidMatchStateException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('throws when a second player cannot be found', async () => {
-    prisma.match.findUnique.mockResolvedValue(
-      baseMatch({ room: { players: [{ userId: WINNER_ID }] } }),
-    );
-    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(
-      InvalidMatchStateException,
-    );
+  it('throws when the match does not have exactly two participants', async () => {
+    prisma.match.findUnique.mockResolvedValue(baseMatch({ participants: [{ userId: WINNER_ID }] }));
+    await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(InvalidMatchStateException);
+  });
+
+  it('applies exactly once when two callers race - the loser of the claim writes nothing', async () => {
+    prisma.match.findUnique.mockResolvedValue(baseMatch({ ratingEligible: true }));
+    prisma.match.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+    const [first, second] = await Promise.all([
+      service.applyMatchRating(MATCH_ID),
+      service.applyMatchRating(MATCH_ID),
+    ]);
+
+    expect([first.alreadyProcessed, second.alreadyProcessed].filter(Boolean)).toHaveLength(1);
+    expect(prisma.userStats.update).toHaveBeenCalledTimes(2); // one winner + one loser write
+    expect(prisma.ratingHistory.create).toHaveBeenCalledTimes(2);
+    expect(prisma.match.updateMany).toHaveBeenCalledWith({
+      where: { id: MATCH_ID, ratingProcessedAt: null },
+      data: { ratingProcessedAt: expect.any(Date) },
+    });
   });
 
   describe('casual (private room) matches', () => {
-    beforeEach(() => {
+    it('never changes rating or writes history, and bumps casual stats only', async () => {
       prisma.match.findUnique.mockResolvedValue(baseMatch({ ratingEligible: false }));
-    });
 
-    it('gives the winner and loser zero rating change', async () => {
       const result = await service.applyMatchRating(MATCH_ID);
-      expect(result).toEqual({ winnerChange: 0, loserChange: 0 });
-    });
 
-    it('creates no RatingHistory rows', async () => {
-      await service.applyMatchRating(MATCH_ID);
+      expect(result).toEqual({ changes: { [WINNER_ID]: 0, [LOSER_ID]: 0 } });
       expect(prisma.ratingHistory.create).not.toHaveBeenCalled();
-    });
-
-    it('bumps casual stats only, never ranked wins/losses', async () => {
-      await service.applyMatchRating(MATCH_ID);
-
-      const winnerCall = prisma.userStats.update.mock.calls.find(
-        (c) => c[0].where.userId === WINNER_ID,
-      );
-      const loserCall = prisma.userStats.update.mock.calls.find(
-        (c) => c[0].where.userId === LOSER_ID,
-      );
-
-      expect(winnerCall[0].data).toEqual({
-        casualWins: { increment: 1 },
-        casualMatchesPlayed: { increment: 1 },
-      });
-      expect(loserCall[0].data).toEqual({
-        casualLosses: { increment: 1 },
-        casualMatchesPlayed: { increment: 1 },
+      expect(statsCall(WINNER_ID)).toEqual({ casualWins: { increment: 1 }, casualMatchesPlayed: { increment: 1 } });
+      expect(statsCall(LOSER_ID)).toEqual({ casualLosses: { increment: 1 }, casualMatchesPlayed: { increment: 1 } });
+      // ratingAfter is the unchanged snapshot.
+      expect(prisma.matchParticipant.update).toHaveBeenCalledWith({
+        where: { matchId_userId: { matchId: MATCH_ID, userId: WINNER_ID } },
+        data: { ratingAfter: 1500 },
       });
     });
 
-    it('stamps ratingProcessedAt via the same transaction', async () => {
-      await service.applyMatchRating(MATCH_ID);
-      const matchUpdateCall = prisma.match.update.mock.calls[0][0];
-      expect(matchUpdateCall.where).toEqual({ id: MATCH_ID });
-      expect(matchUpdateCall.data.ratingProcessedAt).toBeInstanceOf(Date);
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    it('records a casual draw without touching rating', async () => {
+      prisma.match.findUnique.mockResolvedValue(baseMatch({ resultType: 'DRAW', winnerId: null }));
+
+      const result = await service.applyMatchRating(MATCH_ID);
+
+      expect(result.changes).toEqual({ [WINNER_ID]: 0, [LOSER_ID]: 0 });
+      expect(statsCall(WINNER_ID)).toEqual({ casualDraws: { increment: 1 }, casualMatchesPlayed: { increment: 1 } });
+      expect(statsCall(LOSER_ID)).toEqual({ casualDraws: { increment: 1 }, casualMatchesPlayed: { increment: 1 } });
+      expect(prisma.ratingHistory.create).not.toHaveBeenCalled();
     });
   });
 
   describe('ranked (Quick Match) matches', () => {
     beforeEach(() => {
-      prisma.match.findUnique.mockResolvedValue(baseMatch({ ratingEligible: true }));
-      prisma.userStats.findUnique.mockImplementation(({ where: { userId } }) => {
-        if (userId === WINNER_ID) {
-          return Promise.resolve({ rating: 1200, wins: 0, losses: 0, matchesPlayed: 0, bestStreak: 0, currentStreak: 0 });
-        }
-        return Promise.resolve({ rating: 1200, wins: 0, losses: 0, matchesPlayed: 0, bestStreak: 0, currentStreak: 0 });
+      prisma.match.findUnique.mockResolvedValue(baseMatch({ type: 'QUICK_MATCH', ratingEligible: true }));
+    });
+
+    it('applies an opposite-signed Elo change and writes both history rows', async () => {
+      const result = await service.applyMatchRating(MATCH_ID);
+
+      const change = calculateEloChange(1500, 1400);
+      expect(change).toBeGreaterThan(0);
+      expect(result.changes).toEqual({ [WINNER_ID]: change, [LOSER_ID]: -change });
+      expect(prisma.ratingHistory.create).toHaveBeenCalledTimes(2);
+      expect(prisma.matchParticipant.update).toHaveBeenCalledWith({
+        where: { matchId_userId: { matchId: MATCH_ID, userId: LOSER_ID } },
+        data: { ratingAfter: 1400 - change },
       });
     });
 
-    it('is rating eligible and produces a nonzero, opposite-signed change', async () => {
+    it('updates ranked wins/losses/streaks, never casual stats', async () => {
+      await service.applyMatchRating(MATCH_ID);
+
+      expect(statsCall(WINNER_ID)).toMatchObject({ wins: { increment: 1 }, currentStreak: 3, bestStreak: 3 });
+      expect(statsCall(LOSER_ID)).toMatchObject({ losses: { increment: 1 }, currentStreak: 0 });
+      expect(statsCall(WINNER_ID).casualWins).toBeUndefined();
+    });
+
+    it('moves ratings towards each other on a draw with solves', async () => {
+      prisma.match.findUnique.mockResolvedValue(
+        baseMatch({ ratingEligible: true, resultType: 'DRAW', winnerId: null }),
+      );
+
       const result = await service.applyMatchRating(MATCH_ID);
-      expect(result.winnerChange).toBeGreaterThan(0);
-      expect(result.loserChange).toBe(-result.winnerChange);
-    });
 
-    it('creates a RatingHistory row for both winner and loser', async () => {
-      await service.applyMatchRating(MATCH_ID);
+      const change = calculateEloDrawChange(1500, 1400);
+      expect(change).toBeLessThan(0); // the favourite gives up points
+      expect(result.changes).toEqual({ [WINNER_ID]: change, [LOSER_ID]: -change });
+      expect(statsCall(WINNER_ID)).toMatchObject({ draws: { increment: 1 }, currentStreak: 0 });
       expect(prisma.ratingHistory.create).toHaveBeenCalledTimes(2);
-      const userIds = prisma.ratingHistory.create.mock.calls.map((c) => c[0].data.userId);
-      expect(userIds.sort()).toEqual([LOSER_ID, WINNER_ID].sort());
     });
 
-    it('updates ranked wins/losses, not casual stats', async () => {
-      await service.applyMatchRating(MATCH_ID);
-      const winnerCall = prisma.userStats.update.mock.calls.find(
-        (c) => c[0].where.userId === WINNER_ID,
+    it('leaves rating alone for a draw in which nobody solved anything', async () => {
+      prisma.match.findUnique.mockResolvedValue(
+        baseMatch({ ratingEligible: true, resultType: 'DRAW', winnerId: null }),
       );
-      const loserCall = prisma.userStats.update.mock.calls.find(
-        (c) => c[0].where.userId === LOSER_ID,
-      );
-      expect(winnerCall[0].data.wins).toEqual({ increment: 1 });
-      expect(loserCall[0].data.losses).toEqual({ increment: 1 });
-      expect(winnerCall[0].data.casualWins).toBeUndefined();
+      prisma.matchChallengeProgress.count.mockResolvedValue(0);
+
+      const result = await service.applyMatchRating(MATCH_ID);
+
+      expect(result.changes).toEqual({ [WINNER_ID]: 0, [LOSER_ID]: -0 });
+      expect(statsCall(WINNER_ID)).toMatchObject({ rating: { increment: 0 }, draws: { increment: 1 } });
+      expect(prisma.ratingHistory.create).not.toHaveBeenCalled();
     });
 
-    it('bundles every write into a single atomic transaction', async () => {
-      await service.applyMatchRating(MATCH_ID);
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      const ops = prisma.$transaction.mock.calls[0][0];
-      expect(ops).toHaveLength(5); // winner update, loser update, 2 history rows, match update
-    });
-
-    it('propagates a transaction failure without a second, partial attempt', async () => {
+    it('propagates a transaction failure without a partial second attempt', async () => {
       prisma.$transaction.mockRejectedValueOnce(new Error('db connection lost'));
       await expect(service.applyMatchRating(MATCH_ID)).rejects.toThrow('db connection lost');
-      // The one failed transaction call is the only attempt - no fallback
-      // logic re-applies part of the update outside the transaction.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      expect(prisma.match.update).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('Quick Match (no Room - MatchParticipant instead)', () => {
-    beforeEach(() => {
-      prisma.match.findUnique.mockResolvedValue(
-        baseMatch({
-          type: 'QUICK_MATCH',
-          ratingEligible: true,
-          ratingReason: null,
-          room: null,
-          participants: [{ userId: WINNER_ID }, { userId: LOSER_ID }],
-        }),
-      );
-      prisma.userStats.findUnique.mockResolvedValue({
-        rating: 1200,
-        wins: 0,
-        losses: 0,
-        matchesPlayed: 0,
-        bestStreak: 0,
-        currentStreak: 0,
-      });
-    });
-
-    it('derives winner/loser from MatchParticipant, not room.players, and still applies Elo', async () => {
-      const result = await service.applyMatchRating(MATCH_ID);
-      expect(result.winnerChange).toBeGreaterThan(0);
-      expect(result.loserChange).toBe(-result.winnerChange);
-    });
-
-    it('throws when a second participant cannot be found', async () => {
-      prisma.match.findUnique.mockResolvedValue(
-        baseMatch({
-          type: 'QUICK_MATCH',
-          ratingEligible: true,
-          room: null,
-          participants: [{ userId: WINNER_ID }],
-        }),
-      );
-      await expect(service.applyMatchRating(MATCH_ID)).rejects.toBeInstanceOf(
-        InvalidMatchStateException,
-      );
+      expect(prisma.userStats.update).not.toHaveBeenCalled();
     });
   });
 });

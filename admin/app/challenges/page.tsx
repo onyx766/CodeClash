@@ -16,12 +16,19 @@ import {
   cx,
 } from "../../components/ui/Primitives";
 import {
+  IconChevronRight,
   IconPlus,
   IconSpinner,
   IconTrophy,
 } from "../../components/ui/Icons";
+import { BattleEligibilityBadge, BattlePoolPanel } from "../../components/challenges/BattlePoolPanel";
 import { DIFFICULTIES } from "../../lib/draft";
-import type { AdminChallengeSummary, ChallengeStatus } from "../../lib/types";
+import type {
+  AdminChallengeSummary,
+  BatchValidationResponse,
+  BattlePool,
+  ChallengeStatus,
+} from "../../lib/types";
 
 type Filter = "ALL" | ChallengeStatus;
 
@@ -31,6 +38,11 @@ const VALIDATION_TONE = {
   NOT_CHECKED: "neutral",
 } as const;
 
+const GRID = "md:grid-cols-[minmax(0,2fr)_110px_110px_130px_150px_minmax(150px,1fr)_20px]";
+
+const describe = (caught: unknown, fallback: string) =>
+  caught instanceof ApiError ? caught.message : fallback;
+
 export default function ChallengesPage() {
   const { loading, isAdmin } = useRequireAdmin();
   const [filter, setFilter] = useState<Filter>("ALL");
@@ -38,6 +50,12 @@ export default function ChallengesPage() {
   const [rows, setRows] = useState<AdminChallengeSummary[]>([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [pool, setPool] = useState<BattlePool | null>(null);
+  const [poolError, setPoolError] = useState<string | null>(null);
+  const [poolRefreshing, setPoolRefreshing] = useState(false);
+  const [batch, setBatch] = useState<BatchValidationResponse | null>(null);
+  const [batchRunning, setBatchRunning] = useState(false);
 
   const load = useCallback(async () => {
     setFetching(true);
@@ -49,19 +67,50 @@ export default function ChallengesPage() {
       });
       setRows(response.challenges);
     } catch (caught) {
-      setError(
-        caught instanceof ApiError ? caught.message : "Could not load challenges.",
-      );
+      setError(describe(caught, "Could not load challenges."));
     } finally {
       setFetching(false);
     }
   }, [filter, search]);
+
+  const loadPool = useCallback(async () => {
+    setPoolRefreshing(true);
+    try {
+      const response = await challengeService.battlePool();
+      setPool(response.pool);
+      setPoolError(null);
+    } catch (caught) {
+      setPoolError(describe(caught, "Could not load the battle pool."));
+    } finally {
+      setPoolRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
     const timer = setTimeout(() => void load(), search ? 300 : 0);
     return () => clearTimeout(timer);
   }, [isAdmin, load, search]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const timer = setTimeout(() => void loadPool(), 0);
+    return () => clearTimeout(timer);
+  }, [isAdmin, loadPool]);
+
+  const validatePublished = async () => {
+    setBatchRunning(true);
+    setPoolError(null);
+    try {
+      setBatch(await challengeService.validatePublished());
+    } catch (caught) {
+      setPoolError(describe(caught, "The checks could not be run."));
+    } finally {
+      setBatchRunning(false);
+      void loadPool();
+      void load();
+    }
+  };
 
   if (loading || !isAdmin) {
     return (
@@ -73,6 +122,8 @@ export default function ChallengesPage() {
       </div>
     );
   }
+
+  const poolById = new Map((pool?.challenges ?? []).map((entry) => [entry.id, entry]));
 
   return (
     <AdminShell breadcrumbs={[{ label: "Challenges" }]}>
@@ -87,7 +138,7 @@ export default function ChallengesPage() {
                 Challenges
               </h1>
               <p className="mt-0.5 text-[13px] text-muted">
-                Drafts, published problems and the archive.
+                Drafts, published problems and the archive. Open a challenge to run its checks.
               </p>
             </div>
           </div>
@@ -96,6 +147,18 @@ export default function ChallengesPage() {
               Create Challenge
             </Button>
           </Link>
+        </div>
+
+        <div className="mt-5">
+          <BattlePoolPanel
+            pool={pool}
+            error={poolError}
+            refreshing={poolRefreshing}
+            batch={batch}
+            batchRunning={batchRunning}
+            onRefresh={() => void loadPool()}
+            onValidatePublished={() => void validatePublished()}
+          />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -125,13 +188,19 @@ export default function ChallengesPage() {
         ) : null}
 
         <Card className="mt-4 overflow-hidden">
-          <div className="hidden grid-cols-[minmax(0,2fr)_120px_120px_140px_160px_120px] gap-3 border-b border-line bg-[rgba(9,14,28,0.6)] px-4 py-2.5 md:grid">
+          <div
+            className={cx(
+              "hidden gap-3 border-b border-line bg-[rgba(9,14,28,0.6)] px-4 py-2.5 md:grid",
+              GRID,
+            )}
+          >
             <span className="eyebrow">Challenge</span>
             <span className="eyebrow">Difficulty</span>
             <span className="eyebrow">Status</span>
             <span className="eyebrow">Validation</span>
             <span className="eyebrow">Tests</span>
-            <span className="eyebrow">Judge</span>
+            <span className="eyebrow">Battle</span>
+            <span />
           </div>
 
           {rows.length === 0 && !fetching ? (
@@ -145,53 +214,58 @@ export default function ChallengesPage() {
                   (entry) => entry.value === row.difficulty,
                 );
                 return (
-                  <li
-                    key={row.id}
-                    className="grid gap-2 border-b border-line-soft px-4 py-3 last:border-b-0 hover:bg-panel-2/40 md:grid-cols-[minmax(0,2fr)_120px_120px_140px_160px_120px] md:items-center md:gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-[13.5px] font-semibold text-fg">
-                        {row.title}
-                      </p>
-                      <p className="mono truncate text-[11px] text-dim">
-                        /{row.slug}
-                      </p>
-                    </div>
-
-                    <span className="flex items-center gap-1.5 text-[12px] text-muted">
-                      <span
-                        className={cx("size-1.5 rounded-full", difficulty?.tone)}
-                      />
-                      {difficulty?.label}
-                    </span>
-
-                    <Badge
-                      tone={
-                        row.status === "PUBLISHED"
-                          ? "green"
-                          : row.status === "ARCHIVED"
-                            ? "neutral"
-                            : "blue"
-                      }
-                      className="w-fit"
+                  <li key={row.id} className="border-b border-line-soft last:border-b-0">
+                    <Link
+                      href={`/challenges/${row.id}`}
+                      className={cx(
+                        "grid gap-2 px-4 py-3 hover:bg-panel-2/40 md:items-center md:gap-3",
+                        GRID,
+                      )}
                     >
-                      {row.status}
-                    </Badge>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13.5px] font-semibold text-fg">
+                          {row.title}
+                        </p>
+                        <p className="mono truncate text-[11px] text-dim">
+                          /{row.slug} · {row.judgeMethod}
+                        </p>
+                      </div>
 
-                    <Badge
-                      tone={VALIDATION_TONE[row.validationStatus]}
-                      className="w-fit"
-                    >
-                      {row.validationStatus.replace("_", " ")}
-                    </Badge>
+                      <span className="flex items-center gap-1.5 text-[12px] text-muted">
+                        <span
+                          className={cx("size-1.5 rounded-full", difficulty?.tone)}
+                        />
+                        {difficulty?.label}
+                      </span>
 
-                    <span className="mono text-[11.5px] text-dim">
-                      {row.publicTestCount} public · {row.hiddenTestCount} hidden
-                    </span>
+                      <Badge
+                        tone={
+                          row.status === "PUBLISHED"
+                            ? "green"
+                            : row.status === "ARCHIVED"
+                              ? "neutral"
+                              : "blue"
+                        }
+                        className="w-fit"
+                      >
+                        {row.status}
+                      </Badge>
 
-                    <span className="mono text-[11px] text-dim">
-                      {row.judgeMethod}
-                    </span>
+                      <Badge
+                        tone={VALIDATION_TONE[row.validationStatus]}
+                        className="w-fit"
+                      >
+                        {row.validationStatus.replace("_", " ")}
+                      </Badge>
+
+                      <span className="mono text-[11.5px] text-dim">
+                        {row.publicTestCount} public · {row.hiddenTestCount} hidden
+                      </span>
+
+                      <BattleEligibilityBadge entry={poolById.get(row.id)} />
+
+                      <IconChevronRight size={15} className="hidden text-dim md:block" />
+                    </Link>
                   </li>
                 );
               })}

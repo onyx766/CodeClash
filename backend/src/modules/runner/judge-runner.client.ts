@@ -5,6 +5,12 @@ import type {
   RunnerJobPayload,
   RunnerJobResult,
 } from '../challenges/challenge.types';
+import {
+  RUNNER_SIGNATURE_HEADER,
+  RUNNER_TIMESTAMP_HEADER,
+  loadRunnerSecret,
+  verifyRunnerSignature,
+} from '../../common/security/runner-signature.util';
 
 /**
  * The single door between NestJS and the isolated code runner.
@@ -14,12 +20,20 @@ import type {
  * and is executed only inside the runner's container. Nothing here evals,
  * compiles or requires any of it, and the browser never talks to the runner
  * directly: it is always browser -> NestJS -> runner -> NestJS.
+ *
+ * When a runner secret is configured, a verdict is only trusted if its
+ * HMAC signature (over the exact response body) verifies.
  */
 @Injectable()
 export class JudgeRunnerClient {
   private readonly logger = new Logger(JudgeRunnerClient.name);
+  private readonly secret = loadRunnerSecret();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    if (!this.secret && process.env.NODE_ENV === 'production') {
+      this.logger.warn('No runner secret configured - judge verdicts are not signature-checked.');
+    }
+  }
 
   private get runnerUrl(): string {
     return (
@@ -43,12 +57,45 @@ export class JudgeRunnerClient {
   }
 
   async submit(payload: RunnerJobPayload): Promise<RunnerJobResult> {
-    const response = await axios.post<RunnerJobResult>(
-      `${this.runnerUrl}/v2/judge`,
-      payload,
-      { timeout: this.timeoutFor(payload) },
-    );
-    return response.data;
+    const response = await axios.post<string>(`${this.runnerUrl}/v2/judge`, payload, {
+      timeout: this.timeoutFor(payload),
+      // Keep the exact bytes: the signature covers the raw body.
+      responseType: 'text',
+      transformResponse: [(data: unknown) => data],
+    });
+    const raw = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+    const result = JSON.parse(raw) as RunnerJobResult;
+
+    if (this.secret) {
+      const header = (name: string) => {
+        const value = response.headers[name];
+        return typeof value === 'string' ? value : undefined;
+      };
+      const valid = verifyRunnerSignature({
+        secret: this.secret,
+        jobId: result.jobId ?? '',
+        timestamp: header(RUNNER_TIMESTAMP_HEADER),
+        signature: header(RUNNER_SIGNATURE_HEADER),
+        body: raw,
+      });
+      if (!valid) {
+        throw new Error('Runner verdict failed HMAC signature verification.');
+      }
+    }
+    return result;
+  }
+
+  /** Cheap reachability check (GET /health) so the admin UI can say why checks cannot run. */
+  async probe(): Promise<{ reachable: boolean; message: string }> {
+    try {
+      await axios.get(`${this.runnerUrl}/health`, { timeout: 2000 });
+      return { reachable: true, message: `Runner at ${this.runnerUrl} is reachable.` };
+    } catch {
+      return {
+        reachable: false,
+        message: `The code runner at ${this.runnerUrl} is not reachable.`,
+      };
+    }
   }
 
   /**

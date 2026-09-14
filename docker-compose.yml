@@ -25,6 +25,10 @@ services:
     environment:
       - REDIS_HOST=redis
       - SHARED_WORKDIR=/work_shared
+    # Signs /v2/judge verdicts; the backend rejects unsigned ones when it has
+    # the secret too.
+    secrets:
+      - runner_secret
     volumes:
       - runner-work:/work_shared
 

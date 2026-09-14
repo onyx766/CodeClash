@@ -17,17 +17,3 @@ export function getRatingTolerance(
   if (waitSeconds < 45) return config.range30s;
   return config.rangeMax;
 }
-
-/** Picks `count` random, non-repeating items from `items` (id-deduplicated). */
-export function pickRandom<T extends { id: string }>(items: T[], count: number): T[] {
-  const used = new Set<string>();
-  const picks: T[] = [];
-  while (picks.length < count && used.size < items.length) {
-    const candidate = items[Math.floor(Math.random() * items.length)];
-    if (!used.has(candidate.id)) {
-      used.add(candidate.id);
-      picks.push(candidate);
-    }
-  }
-  return picks;
-}

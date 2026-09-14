@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Bell, ChevronDown, LogOut, Menu, User as UserIcon, X } from "lucide-react";
 import Logo from "../ui/Logo";
-import { Avatar } from "../ui/Bits";
+import { Avatar, avatarForUserId } from "../ui/Bits";
 import useAuth from "../../hooks/useAuth";
+import useProfile from "../../hooks/useProfile";
 
 const AUTH_ONLY_ROUTES = new Set(["/lobby", "/challenges"]);
 
@@ -26,6 +27,8 @@ export default function SiteHeader({
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { profileUser } = useProfile();
+  const avatarSrc = profileUser?.avatarUrl || avatarForUserId(user?.id ?? "guest");
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -106,7 +109,7 @@ export default function SiteHeader({
                   aria-expanded={menuOpen}
                   className="flex items-center gap-2.5 rounded-xl px-1.5 py-1.5 transition-colors hover:bg-white/5"
                 >
-                  <Avatar src="/img/avatars/avatar-1.png" alt={user?.username ?? "Account"} size={34} online />
+                  <Avatar src={avatarSrc} alt={user?.username ?? "Account"} size={34} online />
                   <span className="hidden text-left leading-tight sm:block">
                     <span className="block text-[13px] font-semibold">{user?.username}</span>
                   </span>
@@ -122,7 +125,7 @@ export default function SiteHeader({
                     className="absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-xl border border-line bg-surface/95 shadow-xl backdrop-blur-xl"
                   >
                     <div className="flex items-center gap-2.5 border-b border-line px-3.5 py-3">
-                      <Avatar src="/img/avatars/avatar-1.png" alt={user?.username ?? "Account"} size={32} />
+                      <Avatar src={avatarSrc} alt={user?.username ?? "Account"} size={32} />
                       <span className="min-w-0">
                         <span className="block truncate text-[13px] font-semibold">{user?.username}</span>
                         <span className="block truncate text-[11px] text-dim">{user?.email}</span>

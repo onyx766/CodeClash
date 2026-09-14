@@ -1,25 +1,24 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MatchesService } from './matches.service';
 import { MatchesController } from './matches.controller';
-import { MatchProgressionService } from './match-progression.service';
-import { MatchProgressionSweeper } from './match-progression.sweeper';
+import { MatchSelectionService } from './match-selection.service';
+import { MatchFinalizationService } from './match-finalization.service';
+import { MatchTimeoutService } from './match-timeout.service';
 import { DatabaseModule } from '../../database/database.module';
-import { RedisModule } from '../../redis/redis.module';
 import { SocketModule } from '../../socket/socket.module';
-import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { RatingModule } from '../rating/rating.module';
 
 @Module({
-  imports: [
-    DatabaseModule,
-    RedisModule,
-    SocketModule,
-    MatchmakingModule,
-    RatingModule,
+  imports: [DatabaseModule, ConfigModule, SocketModule, RatingModule],
+  providers: [
+    MatchesService,
+    MatchSelectionService,
+    MatchFinalizationService,
+    MatchTimeoutService,
   ],
-  providers: [MatchesService, MatchProgressionService, MatchProgressionSweeper],
   controllers: [MatchesController],
-  // RoundsModule drives progression from the submit path.
-  exports: [MatchProgressionService],
+  // Rooms/Matchmaking start battles; Submissions turns verdicts into progress.
+  exports: [MatchesService, MatchFinalizationService],
 })
 export class MatchesModule {}

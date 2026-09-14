@@ -2,12 +2,13 @@ import { OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGa
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { Role, UserStatus } from '@prisma/client';
 import { parse as parseCookies } from 'cookie';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../database/prisma.service';
-import { RoomsService } from '../modules/rooms/rooms.service';
-import { SocketEvents } from './socket.events';
+import { SocketEvents, matchChannel } from './socket.events';
 import { ACCESS_TOKEN_COOKIE } from '../common/constants/auth.constants';
+import { roleAtLeast } from '../common/constants/role-hierarchy';
 import { touchLastSeen } from '../modules/matchmaking/matchmaking.redis';
 import { loadMatchmakingConfig } from '../modules/matchmaking/matchmaking.constants';
 
@@ -29,7 +30,6 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private config: ConfigService,
     private redis: RedisService,
     private prisma: PrismaService,
-    private rooms: RoomsService,
   ) {}
 
   /**
@@ -40,6 +40,11 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   emitToUser(userId: string, event: string, payload: unknown) {
     this.server.to(`user:${userId}`).emit(event, payload);
+  }
+
+  /** Push to every socket that passed onMatchJoin's membership check. */
+  emitToMatch(matchId: string, event: string, payload: unknown) {
+    this.server.to(matchChannel(matchId)).emit(event, payload);
   }
 
   /**
@@ -81,6 +86,12 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  /**
+   * Deliberately does not touch any match. A dropped socket (refresh, flaky
+   * network) must not forfeit a battle: the match lives in PostgreSQL, its
+   * clock keeps running server-side, and the client recovers with
+   * GET /matches/:id plus a fresh match:join.
+   */
   async handleDisconnect(client: Socket) {
     const user = client.data.user;
     if (user) {
@@ -88,6 +99,44 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await r.del(`player:${user.id}:presence`);
       this.server.emit(SocketEvents.ROOM_UPDATE, { userDisconnected: user.id });
     }
+  }
+
+  /**
+   * Subscribe to a match's live events. The identity is the one authenticated
+   * at handshake (JWT cookie) - any userId in the payload is ignored - and it
+   * must belong to a participant, or to an active ADMIN/MASTER spectating.
+   * Acks { ok } so the client knows whether it is subscribed.
+   */
+  @SubscribeMessage(SocketEvents.MATCH_JOIN)
+  async onMatchJoin(client: Socket, payload: { matchId?: unknown }) {
+    const user = client.data.user;
+    const matchId = typeof payload?.matchId === 'string' ? payload.matchId : null;
+    if (!user || !matchId) return { ok: false, error: 'INVALID_REQUEST' };
+    if (!(await this.canWatchMatch(user.id, matchId))) {
+      return { ok: false, error: 'MATCH_ACCESS_DENIED' };
+    }
+    await client.join(matchChannel(matchId));
+    return { ok: true };
+  }
+
+  @SubscribeMessage(SocketEvents.MATCH_LEAVE)
+  async onMatchLeave(client: Socket, payload: { matchId?: unknown }) {
+    if (typeof payload?.matchId === 'string') await client.leave(matchChannel(payload.matchId));
+    return { ok: true };
+  }
+
+  private async canWatchMatch(userId: string, matchId: string): Promise<boolean> {
+    const participant = await this.prisma.matchParticipant.findUnique({
+      where: { matchId_userId: { matchId, userId } },
+      select: { id: true },
+    });
+    if (participant) return true;
+    // Role from the database, not the token, so a demotion or ban applies now.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, status: true },
+    });
+    return !!user && user.status === UserStatus.ACTIVE && roleAtLeast(user.role, Role.ADMIN);
   }
 
   @SubscribeMessage(SocketEvents.ROOM_JOIN)

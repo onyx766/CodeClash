@@ -51,7 +51,12 @@ describe('AdminUsersService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      $transaction: jest.fn((operations: unknown[]) => Promise.all(operations)),
+      userProfile: {
+        upsert: jest.fn(),
+      },
+      $transaction: jest.fn((arg: unknown) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg as unknown[]),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -373,6 +378,59 @@ describe('AdminUsersService', () => {
       await expect(
         service.create(actor(Role.ADMIN), payload),
       ).rejects.toBeInstanceOf(UsernameAlreadyExistsException);
+    });
+  });
+
+  describe('update', () => {
+    it('persists country/region/city directly on the user row, clearing empty strings to null', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'user-1',
+          role: Role.USER,
+          username: 'alexchen',
+          email: 'alex@example.com',
+        })
+        .mockResolvedValueOnce(
+          userRow({
+            region: 'Ontario',
+            city: 'Toronto',
+            profile: { displayName: null, bio: null, location: null, avatarUrl: null },
+            sessionsRevokedAt: null,
+          }),
+        );
+      prisma.user.update.mockResolvedValue(undefined);
+
+      await service.update(actor(Role.ADMIN), 'user-1', {
+        country: 'Canada',
+        region: '',
+        city: 'Toronto',
+      });
+
+      const data = prisma.user.update.mock.calls[0][0].data;
+      expect(data.country).toBe('Canada');
+      expect(data.region).toBeNull();
+      expect(data.city).toBe('Toronto');
+    });
+
+    it('leaves country/region/city untouched when not sent', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: 'user-1',
+          role: Role.USER,
+          username: 'alexchen',
+          email: 'alex@example.com',
+        })
+        .mockResolvedValueOnce(
+          userRow({
+            profile: { displayName: 'Alex', bio: null, location: null, avatarUrl: null },
+            sessionsRevokedAt: null,
+          }),
+        );
+
+      await service.update(actor(Role.ADMIN), 'user-1', { displayName: 'Alex' });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.userProfile.upsert.mock.calls[0][0].update).toEqual({ displayName: 'Alex' });
     });
   });
 });

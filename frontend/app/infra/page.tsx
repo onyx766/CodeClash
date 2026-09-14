@@ -42,7 +42,7 @@ export default function InfraPage() {
                   <th className="text-left pr-4">Job ID</th>
                   <th className="text-left pr-4">User</th>
                   <th className="text-left pr-4">Match</th>
-                  <th className="text-left pr-4">Round</th>
+                  <th className="text-left pr-4">Match challenge</th>
                   <th className="text-left pr-4">Timestamp</th>
                   <th className="text-left pr-4">Exit</th>
               </tr>
@@ -57,7 +57,7 @@ export default function InfraPage() {
                   }}>{j.jobId}</button></td>
                     <td className="pr-4">{j.metadata?.userId || '-'}</td>
                     <td className="pr-4">{j.metadata?.matchId || '-'}</td>
-                    <td className="pr-4">{j.metadata?.roundId || '-'}</td>
+                    <td className="pr-4">{j.metadata?.matchChallengeId || '-'}</td>
                   <td className="pr-4">{new Date(j.timestamp).toLocaleString()}</td>
                   <td>{j.exitCode}</td>
                 </tr>

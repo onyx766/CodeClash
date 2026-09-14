@@ -178,7 +178,7 @@ export default function ChallengesPage() {
                     <span className="text-[11.5px] font-mono text-dim">#{c.id}</span>
                     <Icon size={14} className={meta.iconColor} strokeWidth={2.2} />
                     <h2 className="text-[16px] font-bold leading-snug">{c.title}</h2>
-                    {c.hot && <Flame size={14} className="text-amber" fill="currentColor" />}
+                    {"hot" in c && c.hot && <Flame size={14} className="text-amber" fill="currentColor" />}
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2">

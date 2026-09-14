@@ -29,7 +29,7 @@ enum Difficulty {
 
 /// Authoring lifecycle. DRAFT is freely editable; PUBLISHED is the only state
 /// the match/challenge pools draw from; ARCHIVED is retired but kept so that
-/// historical Rounds/Submissions still resolve.
+/// historical MatchChallenges/Submissions still resolve.
 enum ChallengeStatus {
   DRAFT
   PUBLISHED
@@ -84,14 +84,53 @@ enum MatchStatus {
   // Quick Match only: match has been created and is waiting on both
   // participants to confirm readiness (see MatchParticipant.readyAt).
   // Private-room matches never enter these two states - MatchesService
-  // still creates them directly as IN_PROGRESS.
+  // creates them directly as IN_PROGRESS.
   PENDING_READY
   READY
   IN_PROGRESS
   FINISHED
   CANCELLED
+  // Never written by the five-challenge battle engine. Kept only because
+  // dropping a value from a Postgres enum is a destructive migration.
   ABANDONED
   EXPIRED
+}
+
+/// Why a match left IN_PROGRESS. Set exactly once, by MatchFinalizationService.
+enum MatchFinishReason {
+  ALL_CHALLENGES_SOLVED
+  PLAYER_GAVE_UP
+  TIME_EXPIRED
+  SYSTEM_CANCELLED
+  // Reserved for a future disconnect-grace forfeit policy. A WebSocket
+  // disconnect never ends a match today.
+  OPPONENT_DISCONNECTED
+}
+
+enum MatchResultType {
+  WIN
+  DRAW
+}
+
+/// Per-player state of one of the match's challenges.
+enum MatchChallengeStatus {
+  NOT_STARTED
+  ATTEMPTING
+  SOLVED
+}
+
+/// QUEUED/RUNNING are the only non-final states. Only ACCEPTED can mark a
+/// MatchChallengeProgress SOLVED - see RunnerResultService.
+enum SubmissionStatus {
+  QUEUED
+  RUNNING
+  ACCEPTED
+  WRONG_ANSWER
+  RUNTIME_ERROR
+  TIME_LIMIT
+  MEMORY_LIMIT
+  OUTPUT_LIMIT
+  SYSTEM_ERROR
 }
 
 enum MatchType {
@@ -117,14 +156,14 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // ---- account standing (admin user management) -------------------------
-  status    UserStatus @default(ACTIVE)
-  bannedAt  DateTime?
-  banReason String?
+  status      UserStatus @default(ACTIVE)
+  bannedAt    DateTime?
+  banReason   String?
   /// Who applied the ban. Kept for the audit trail; nulled if that admin's
   /// account is ever deleted.
-  bannedById String?
-  bannedBy   User?   @relation("userBans", fields: [bannedById], references: [id], onDelete: SetNull)
-  bannedUsers User[] @relation("userBans")
+  bannedById  String?
+  bannedBy    User?      @relation("userBans", fields: [bannedById], references: [id], onDelete: SetNull)
+  bannedUsers User[]     @relation("userBans")
 
   /// Last time this account authenticated (login or token refresh). Null for
   /// an account that has never signed in - the admin UI shows "Never" rather
@@ -147,7 +186,8 @@ model User {
   submissions Submission[]
   // matches as winner relation
   wonMatches  Match[]      @relation("winner")
-  wonRounds   Round[]      @relation("roundWinner")
+
+  matchChallengeProgress MatchChallengeProgress[]
 
   sentInvitations     RoomInvitation[] @relation("invitationInviter")
   receivedInvitations RoomInvitation[] @relation("invitationInvitee")
@@ -195,9 +235,12 @@ model UserStats {
   coins            Int @default(0)
   xp               Int @default(0)
 
+  draws Int @default(0)
+
   // Casual stats - private room (PRIVATE_ROOM) results only. Never affects rating.
   casualWins          Int @default(0)
   casualLosses        Int @default(0)
+  casualDraws         Int @default(0)
   casualMatchesPlayed Int @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -254,9 +297,9 @@ model Challenge {
   memoryLimitMb Int @default(128)
   outputLimitKb Int @default(64)
 
-  /// Round duration in seconds: how long players get to write a solution and
-  /// what Round.endsAt is derived from. NOT an execution limit - see
-  /// timeLimitMs above and EXECUTION_TIMEOUT_SECONDS in RoundsService.
+  /// Suggested solving time in seconds, shown in the admin console. Battles do
+  /// not use it - a match has one overall clock (MATCH_DURATION_MINUTES). NOT
+  /// an execution limit either - see timeLimitMs above.
   timeLimitSeconds Int @default(300)
 
   // ---- lifecycle ---------------------------------------------------------
@@ -281,15 +324,16 @@ model Challenge {
   publishedAt DateTime?
   archivedAt  DateTime?
 
-  testCases ChallengeTestCase[]
-  rounds    Round[]
-  tags      ChallengeTag[]
+  testCases       ChallengeTestCase[]
+  matchChallenges MatchChallenge[]
+  submissions     Submission[]
+  tags            ChallengeTag[]
 
   @@index([status])
 }
 
 model ChallengeTag {
-  id   String @id @default(uuid())
+  id    String @id @default(uuid())
   /// Lowercase, hyphenated. The display label lives in `label`.
   slug  String @unique
   label String
@@ -367,28 +411,34 @@ model RoomPlayer {
   joinedAt DateTime @default(now())
 }
 
+/// One battle between two players over the same MatchChallenge set. Quick
+/// Match and private rooms share this model and the whole battle engine; they
+/// differ only in `type` / `ratingEligible`.
 model Match {
-  id                 String      @id @default(uuid())
-  // Private-room matches only - Quick Match matches have no Room and use
-  // MatchParticipant instead (see below). Nullable specifically so Quick
-  // Match doesn't have to fabricate a Room just to have somewhere to hang
-  // its players.
-  room               Room?       @relation(fields: [roomId], references: [id])
-  roomId             String?     @unique
-  status             MatchStatus @default(PENDING)
-  currentRoundNumber Int         @default(0)
-  totalRounds        Int         @default(3)
-  winnerId           String?
-  winner             User?       @relation("winner", fields: [winnerId], references: [id])
-  startedAt          DateTime?
-  finishedAt         DateTime?
+  id       String      @id @default(uuid())
+  // Private-room matches only. Quick Match matches have no Room.
+  room     Room?       @relation(fields: [roomId], references: [id])
+  roomId   String?     @unique
+  status   MatchStatus @default(PENDING)
+  winnerId String?
+  winner   User?       @relation("winner", fields: [winnerId], references: [id])
+
+  /// Null until the match leaves IN_PROGRESS. A DRAW has no winnerId.
+  finishReason MatchFinishReason?
+  resultType   MatchResultType?
+
+  startedAt  DateTime?
+  /// startedAt + MATCH_DURATION_MINUTES. The server clock is authoritative;
+  /// MatchTimeoutService resolves the match once this passes.
+  expiresAt  DateTime?
+  finishedAt DateTime?
 
   // Quick Match only: deadline for both MatchParticipant rows to have
   // readyAt set before the match is auto-cancelled. Null for private rooms.
   readyDeadline DateTime?
 
   // Anti-rigging: server-determined match type and rating eligibility. Never
-  // settable by client input - see RoomsService/MatchesService/RatingService.
+  // settable by client input - see MatchesService/RatingService.
   type              MatchType @default(PRIVATE_ROOM)
   ratingEligible    Boolean   @default(false)
   ratingReason      String?
@@ -398,27 +448,34 @@ model Match {
   riskScore  Int?
   riskStatus MatchRiskStatus?
 
-  rounds        Round[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   ratingHistory RatingHistory[]
-  // Quick Match participants. Private-room matches leave this empty and
-  // keep reading players from room.players - see RatingService.
   participants  MatchParticipant[]
+  challenges    MatchChallenge[]
+  submissions   Submission[]
+
+  @@index([status, expiresAt])
 }
 
-// Quick Match participant record. Private rooms already have a participant
-// structure (Room.players via RoomPlayer) and continue using it unchanged -
-// this table exists only because Quick Match matches have no Room.
+/// A player in a match - every match type, private rooms included.
 model MatchParticipant {
   id String @id @default(uuid())
 
   matchId String
   userId  String
 
+  /// Quick Match ready confirmation. Unused by private rooms.
   readyAt DateTime?
 
-  // Rating snapshot at matchmaking time - never trust client-provided rating.
+  // Rating snapshot read from UserStats when the match is created - never
+  // trust a client-provided rating.
   ratingBefore Int
   ratingAfter  Int?
+
+  gaveUpAt DateTime?
+  joinedAt DateTime  @default(now())
 
   match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -427,53 +484,98 @@ model MatchParticipant {
   @@index([userId])
 }
 
-model Round {
-  id          String    @id @default(uuid())
-  match       Match     @relation(fields: [matchId], references: [id])
+/// One of the challenges selected for a match. Selected once, server-side,
+/// when the match starts; both players share the same rows.
+model MatchChallenge {
+  id String @id @default(uuid())
+
   matchId     String
-  challenge   Challenge @relation(fields: [challengeId], references: [id])
   challengeId String
-  roundNumber Int
-  // Null until the round actually begins. Only round 1 is scheduled when the
-  // match starts - later rounds are scheduled by MatchProgressionService as
-  // the previous one closes, so their deadline is measured from when players
-  // can actually see the challenge (see startNextRound).
-  startedAt   DateTime?
-  endsAt      DateTime?
-  // Set exactly once, by the conditional claim in
-  // MatchProgressionService.closeRound. Non-null means the round is closed and
-  // no further submissions are accepted.
-  finishedAt  DateTime?
 
-  // Server-decided round result. Null on a closed round means a draw (neither
-  // player submitted, or their score and submission time were identical).
-  // Never settable by client input.
-  winnerId String?
-  winner   User?   @relation("roundWinner", fields: [winnerId], references: [id])
+  /// 1-based display order. Players may solve in any order.
+  position Int
 
+  createdAt DateTime @default(now())
+
+  match     Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+
+  progress    MatchChallengeProgress[]
   submissions Submission[]
+
+  @@unique([matchId, challengeId])
+  @@unique([matchId, position])
+  @@index([matchId])
 }
 
-model Submission {
-  id          String   @id @default(uuid())
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String
-  round       Round    @relation(fields: [roundId], references: [id])
-  roundId     String
-  code        String   @db.Text
-  passedTests Int
-  totalTests  Int
-  runtimeMs   Int
-  score       Int
-  submittedAt DateTime @default(now())
+/// A player's state on one MatchChallenge. Created eagerly for both players
+/// when the match starts. Only RunnerResultService writes SOLVED, and only
+/// once: solvedAt/solveDurationMs/bestSubmissionId never change afterwards.
+model MatchChallengeProgress {
+  id String @id @default(uuid())
 
-  // One scoring submission per player per round. A round closes as soon as
-  // both players have submitted, so a second attempt would have nothing left
-  // to decide. Enforced in the database as well as in RoundsService so two
-  // concurrent submits cannot slip both rows past the service-level check.
-  // The unlimited practice path is POST /rounds/:roundId/run, which never
-  // writes a Submission.
-  @@unique([roundId, userId])
+  matchChallengeId String
+  userId           String
+
+  status MatchChallengeStatus @default(NOT_STARTED)
+
+  /// Scored submissions made (Run Tests does not count).
+  attempts Int @default(0)
+
+  firstAttemptAt  DateTime?
+  solvedAt        DateTime?
+  /// solvedAt - Match.startedAt. Summed for the timeout tie-break.
+  solveDurationMs Int?
+
+  /// The first ACCEPTED submission - the one that set solvedAt.
+  bestSubmissionId String?     @unique
+  bestSubmission   Submission? @relation("progressBestSubmission", fields: [bestSubmissionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  matchChallenge MatchChallenge @relation(fields: [matchChallengeId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchChallengeId, userId])
+  @@index([userId])
+}
+
+/// A scored attempt, judged by the isolated runner against public AND hidden
+/// tests. Run Tests (public tests only) never writes one.
+model Submission {
+  id     String @id @default(uuid())
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
+  challengeId String
+
+  match            Match?          @relation(fields: [matchId], references: [id])
+  matchId          String?
+  matchChallenge   MatchChallenge? @relation(fields: [matchChallengeId], references: [id])
+  matchChallengeId String?
+
+  sourceCode String @db.Text
+  language   String @default("javascript")
+
+  status SubmissionStatus @default(QUEUED)
+
+  /// Null until the runner verdict is recorded.
+  passedTests  Int?
+  totalTests   Int?
+  runtimeMs    Int?
+  memoryUsedKb Int?
+  runnerJobId  String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  bestFor MatchChallengeProgress? @relation("progressBestSubmission")
+
+  @@index([matchChallengeId, userId])
+  @@index([matchId, status])
+  @@index([userId, createdAt])
 }
 
 // Only ever populated for ratingEligible matches - see RatingService. Private

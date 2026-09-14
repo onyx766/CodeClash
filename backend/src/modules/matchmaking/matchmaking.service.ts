@@ -1,15 +1,15 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChallengeStatus, MatchStatus, MatchType } from '@prisma/client';
+import { MatchStatus, MatchType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
 import { SocketEvents } from '../../socket/socket.events';
 import { RoomsService } from '../rooms/rooms.service';
+import { MatchesService } from '../matches/matches.service';
 import {
   ActiveMatchExistsException,
   ActiveRoomExistsException,
-  ChallengePoolInsufficientException,
   InvalidMatchStateException,
   MatchAlreadyFoundException,
   MatchmakingUnavailableException,
@@ -17,7 +17,7 @@ import {
   UserStatsNotFoundException,
 } from '../../common/exceptions/app.exception';
 import { MatchmakingConfig, loadMatchmakingConfig } from './matchmaking.constants';
-import { getRatingTolerance, pickRandom } from './matchmaking.util';
+import { getRatingTolerance } from './matchmaking.util';
 import {
   claimPair,
   dequeue,
@@ -59,6 +59,7 @@ export class MatchmakingService {
     private redis: RedisService,
     private rooms: RoomsService,
     private socket: SocketGateway,
+    private matches: MatchesService,
     config: ConfigService,
   ) {
     this.config = loadMatchmakingConfig(config);
@@ -213,11 +214,10 @@ export class MatchmakingService {
       return { matchId, status: MatchStatus.READY };
     }
 
-    return this.startQuickMatch(
-      matchId,
-      freshParticipants.map((p) => p.userId),
-      match.totalRounds,
-    );
+    // Same five-challenge battle engine as private rooms - only the match's
+    // QUICK_MATCH / ratingEligible values differ.
+    await this.matches.startQuickMatch(matchId);
+    return { matchId, status: MatchStatus.IN_PROGRESS };
   }
 
   // --- Background worker entry points ---------------------------------
@@ -357,7 +357,6 @@ export class MatchmakingService {
             type: MatchType.QUICK_MATCH,
             status: MatchStatus.PENDING_READY,
             ratingEligible: true,
-            totalRounds: 3,
             readyDeadline: new Date(Date.now() + this.config.readyTimeoutSeconds * 1000),
           },
         });
@@ -419,56 +418,6 @@ export class MatchmakingService {
 
     this.emitToUser(a.userId, SocketEvents.MATCHMAKING_MATCH_FOUND, payloadFor(a, b));
     this.emitToUser(b.userId, SocketEvents.MATCHMAKING_MATCH_FOUND, payloadFor(b, a));
-  }
-
-  /** Called once handleReady's atomic claim has already flipped the match to
-   * READY - this always runs exactly once per match (the claim guarantees
-   * only one caller ever reaches here). */
-  private async startQuickMatch(matchId: string, participantUserIds: string[], totalRounds: number) {
-    const pool = await this.prisma.challenge.findMany({
-      where: { status: ChallengeStatus.PUBLISHED },
-    });
-    if (pool.length < totalRounds) {
-      await this.prisma.match.update({
-        where: { id: matchId },
-        data: { status: MatchStatus.CANCELLED, finishedAt: new Date() },
-      });
-      throw new ChallengePoolInsufficientException();
-    }
-
-    const picks = pickRandom(pool, totalRounds);
-    const now = new Date();
-    const rounds: { id: string; roundNumber: number }[] = [];
-    let roundNumber = 1;
-    for (const challenge of picks) {
-      // Only round 1 is scheduled here. Rounds 2+ are created unscheduled and
-      // get their startedAt/endsAt from MatchProgressionService.startNextRound
-      // when the previous round closes - otherwise their deadline would be
-      // measured from match start and they would already be expired by the
-      // time players ever saw them.
-      const isFirst = roundNumber === 1;
-      const startedAt = isFirst ? now : null;
-      const endsAt = isFirst
-        ? new Date(now.getTime() + (challenge.timeLimitSeconds || 300) * 1000)
-        : null;
-      const round = await this.prisma.round.create({
-        data: { matchId, challengeId: challenge.id, roundNumber, startedAt, endsAt },
-      });
-      rounds.push(round);
-      roundNumber++;
-    }
-
-    await this.prisma.match.update({
-      where: { id: matchId },
-      data: { status: MatchStatus.IN_PROGRESS, currentRoundNumber: 1, startedAt: now },
-    });
-
-    for (const userId of participantUserIds) {
-      this.emitToUser(userId, SocketEvents.MATCH_START, { matchId });
-      this.emitToUser(userId, SocketEvents.ROUND_START, { round: rounds[0] });
-    }
-
-    return { matchId, status: MatchStatus.IN_PROGRESS };
   }
 
   private searchingState(entry: QueueEntry): MatchmakingState {
