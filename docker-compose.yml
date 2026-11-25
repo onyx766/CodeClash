@@ -108,6 +108,14 @@ services:
         condition: service_healthy
       dind:
         condition: service_healthy
+    # Ready once docker and Redis answer (the worker registers itself only
+    # after the sandbox image is present).
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5001/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   backend:
     build: ./backend
@@ -141,7 +149,8 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       AUTO_VALIDATE_CHALLENGES: ${AUTO_VALIDATE_CHALLENGES:-true}
       SEED_DATABASE: ${SEED_DATABASE:-true}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # Staff accounts are seeded with this password - never a built-in default.
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD is not set - run ./scripts/init-env.sh}
       SEED_PLAYER_PASSWORD: ${SEED_PLAYER_PASSWORD:-}
       SEED_DEMO_PLAYERS: ${SEED_DEMO_PLAYERS:-true}
     depends_on:
@@ -171,6 +180,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   admin:
     build:
@@ -185,6 +199,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7662/login"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
 networks:
   default:
