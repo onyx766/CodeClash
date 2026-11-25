@@ -128,6 +128,8 @@ export class ProfilesService {
    * Explicitly maps only the editable profile/preference fields - never
    * spreads the DTO into Prisma's `data`, so a protected field slipping past
    * validation (role, rating, coins, ...) still could not reach the User row.
+   * An omitted field is left alone; a text field the DTO resolved to null
+   * (sent as null or blank) is cleared.
    */
   async updateMyProfile(
     userId: string,
