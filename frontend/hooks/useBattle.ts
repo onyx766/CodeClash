@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, matches as matchesApi } from "../lib/api";
 import { joinChannel, onEveryConnect } from "../lib/socket";
 import type { BattleMatch, ChallengeStatement, MatchStatus } from "../lib/battle";
@@ -49,11 +49,20 @@ export function useBattle(matchId: string) {
   );
   const [readyCheckEnd, setReadyCheckEnd] = useState<ReadyCheckEnd | null>(null);
   const [statementsAttempt, setStatementsAttempt] = useState(0);
+  // Polls, socket events and the player's own actions all re-read the match,
+  // and their answers can arrive out of order. Only an answer at least as new
+  // as the one on screen may replace it - otherwise a read sent before the
+  // match finished could put a finished match back "in progress".
+  const lastSent = useRef(0);
+  const lastShown = useRef(0);
 
   const refresh = useCallback((): Promise<BattleMatch | null> => {
+    const id = ++lastSent.current;
     const sentAt = Date.now();
     return matchesApi.get(matchId).then(
       (res: { match: BattleMatch }) => {
+        if (id < lastShown.current) return res.match;
+        lastShown.current = id;
         const receivedAt = Date.now();
         setClockSkewMs(new Date(res.match.serverTime).getTime() - (sentAt + receivedAt) / 2);
         setMatch(res.match);
@@ -61,6 +70,7 @@ export function useBattle(matchId: string) {
         return res.match;
       },
       (e: unknown) => {
+        if (id < lastShown.current) return null;
         setError(
           e instanceof ApiError
             ? { status: e.status, code: e.code, message: e.message }
