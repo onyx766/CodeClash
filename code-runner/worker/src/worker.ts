@@ -93,7 +93,6 @@ async function ensureSandboxImage(attempts = 5) {
 
 /**
  * Per-job container settings written by the runner service alongside job.json.
- * Absent for legacy /run jobs, which keep the previous fixed limits.
  */
 interface RunnerManifest {
   entry: string;
@@ -103,10 +102,10 @@ interface RunnerManifest {
 }
 
 const DEFAULT_MANIFEST: RunnerManifest = {
-  entry: 'executor.js',
-  memoryLimitMb: 256,
+  entry: 'judge-runtime.js',
+  memoryLimitMb: 128,
   hardTimeoutMs: 60_000,
-  protocol: 'v1',
+  protocol: 'v2',
 };
 
 async function readManifest(subdir: string): Promise<RunnerManifest> {
@@ -114,9 +113,8 @@ async function readManifest(subdir: string): Promise<RunnerManifest> {
     const raw = await fs.readFile(path.join(baseDir, subdir, 'runner.json'), 'utf8');
     const parsed = JSON.parse(raw);
     return {
-      // Only ever one of the two executors we ship - never an arbitrary path
-      // from the queue payload.
-      entry: parsed.entry === 'judge-runtime.js' ? 'judge-runtime.js' : 'executor.js',
+      // Always the one runtime we ship - never a path from the job directory.
+      entry: 'judge-runtime.js',
       memoryLimitMb: Math.max(32, Math.min(Number(parsed.memoryLimitMb) || 256, 512)),
       hardTimeoutMs: Math.max(1000, Math.min(Number(parsed.hardTimeoutMs) || 60_000, 180_000)),
       protocol: String(parsed.protocol || 'v1'),
