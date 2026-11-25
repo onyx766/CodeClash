@@ -32,12 +32,22 @@ const PAGE_SIZE = 20;
 function UsersPageInner() {
   const { user, loading: authLoading, isAdmin } = useRequireAdmin();
   const searchParams = useSearchParams();
+  const urlSearch = searchParams.get("search") ?? "";
 
   const [filters, setFilters] = useState<ListUsersQuery>({
     // Seeded from ?search= so the topbar search lands here with a query.
-    search: searchParams.get("search") ?? "",
+    search: urlSearch,
   });
   const [page, setPage] = useState(1);
+
+  // A later topbar search changes ?search= while this page stays mounted;
+  // follow it and start again from the first page.
+  const [syncedSearch, setSyncedSearch] = useState(urlSearch);
+  if (urlSearch !== syncedSearch) {
+    setSyncedSearch(urlSearch);
+    setFilters((current) => ({ ...current, search: urlSearch }));
+    setPage(1);
+  }
   const [sortBy, setSortBy] = useState<UserSortField>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
