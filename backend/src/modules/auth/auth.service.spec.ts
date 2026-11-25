@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { GeolocationService } from '../geolocation/geolocation.service';
@@ -73,6 +73,24 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
+    it.each([
+      [['username'], 'USERNAME_ALREADY_EXISTS'],
+      [['email'], 'EMAIL_ALREADY_EXISTS'],
+    ])('turns a unique-constraint race on %p into a %s conflict', async (target, code) => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target },
+        }),
+      );
+
+      await expect(
+        service.register('kevin@example.com', 'kevin', 'securePassword123'),
+      ).rejects.toMatchObject({ code });
+    });
+
     it('creates a user, hashes the password, and returns tokens with a safe user', async () => {
       usersService.findByEmailOrUsername.mockResolvedValue(null);
       usersService.create.mockResolvedValue({

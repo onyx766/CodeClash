@@ -61,4 +61,36 @@ describe('RegisterDto validation', () => {
     });
     expect(errors.some((e) => e.property === 'username')).toBe(true);
   });
+
+  it.each(['kevin_dev', 'K-9', 'abc'])('accepts the username %p', async (username) => {
+    const dto = plainToInstance(RegisterDto, {
+      email: 'kevin@example.com',
+      username,
+      password: 'securePassword123',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it.each(['kevin dev', 'a/b', 'ke<script>', 'me', 'ME', 'naïve'])(
+    'rejects the username %p',
+    async (username) => {
+      const dto = plainToInstance(RegisterDto, {
+        email: 'kevin@example.com',
+        username,
+        password: 'securePassword123',
+      });
+      const errors = await validate(dto);
+      expect(errors.some((e) => e.property === 'username')).toBe(true);
+    },
+  );
+
+  it('rejects a password longer than 128 characters', async () => {
+    const dto = plainToInstance(RegisterDto, {
+      email: 'kevin@example.com',
+      username: 'kevin',
+      password: 'x'.repeat(129),
+    });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'password')).toBe(true);
+  });
 });

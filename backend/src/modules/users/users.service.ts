@@ -46,9 +46,15 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { username } });
   }
 
+  /**
+   * Usernames are unique case-insensitively ("Alice" and "alice" would be
+   * indistinguishable in the UI); the admin console applies the same rule.
+   */
   async findByEmailOrUsername(email: string, username: string) {
     return this.prisma.user.findFirst({
-      where: { OR: [{ email }, { username }] },
+      where: {
+        OR: [{ email }, { username: { equals: username, mode: 'insensitive' } }],
+      },
     });
   }
 

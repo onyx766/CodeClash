@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { StringValue } from 'ms';
 import {
   hashPassword,
@@ -67,11 +67,24 @@ export class AuthService {
 
     const passwordHash = await hashPassword(password);
 
-    const user = await this.usersService.create({
-      email: normalizedEmail,
-      username,
-      passwordHash,
-    });
+    let user: Awaited<ReturnType<UsersService['create']>>;
+    try {
+      user = await this.usersService.create({
+        email: normalizedEmail,
+        username,
+        passwordHash,
+      });
+    } catch (error) {
+      // Two simultaneous sign-ups can both pass the check above; the unique
+      // index then rejects the second, which is a conflict, not a 500.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = String((error.meta as { target?: unknown } | undefined)?.target ?? '');
+        throw target.includes('email')
+          ? new EmailAlreadyExistsException()
+          : new UsernameAlreadyExistsException();
+      }
+      throw error;
+    }
 
     const tokens = this.generateTokens(user);
 
