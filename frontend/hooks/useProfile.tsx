@@ -47,10 +47,14 @@ export type ProfilePreferences = {
 
 /** Editable fields of PATCH /users/me/profile; omitted fields stay as they are. */
 export type ProfileChanges = Partial<{
+  /** 1-50 characters; it can be changed but not removed. */
   displayName: string;
+  /** Up to 300 characters; "" clears it. */
   bio: string;
+  /** Up to 100 characters; "" clears it. */
   location: string;
-  avatarUrl: string;
+  /** An http(s) image URL; null removes it and the default avatar is shown. */
+  avatarUrl: string | null;
   favoriteLanguages: string[];
   favoriteTopics: string[];
 }>;

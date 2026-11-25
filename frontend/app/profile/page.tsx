@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Calendar, Code2, Flame, Gem, Globe2, MapPin, PencilLine, Swords, Trophy } from "lucide-react";
 import AppLayout from "../../components/layout/AppLayout";
 import MainSidebar from "../../components/app/MainSidebar";
 import ProfileRail from "../../components/app/ProfileRail";
+import EditProfileModal from "../../components/profile/EditProfileModal";
 import MatchHistoryPanel from "../../components/profile/MatchHistoryPanel";
 import RecordsPanel from "../../components/profile/RecordsPanel";
 import { Avatar, IconBadge, Tag, avatarForUserId } from "../../components/ui/Bits";
@@ -26,6 +28,7 @@ function formatJoined(iso?: string) {
 export default function ProfilePage() {
   const { user } = useAuth();
   const { profileUser, stats } = useProfile();
+  const [editing, setEditing] = useState(false);
 
   const displayName = profileUser?.displayName || user?.username || "";
   const avatarSrc = profileUser?.avatarUrl || avatarForUserId(user?.id ?? "guest");
@@ -41,7 +44,12 @@ export default function ProfilePage() {
   ] as const;
 
   return (
-    <AppLayout sidebar={<MainSidebar />} rail={<ProfileRail />}>
+    <AppLayout
+      sidebar={<MainSidebar />}
+      rail={<ProfileRail onEdit={profileUser ? () => setEditing(true) : undefined} />}
+    >
+      {editing && <EditProfileModal onClose={() => setEditing(false)} />}
+
       <section className="card relative overflow-hidden p-5 sm:p-6">
         <Code2
           size={64}
@@ -85,7 +93,12 @@ export default function ProfilePage() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" className="btn btn-ghost !px-4 !py-2 !text-[12.5px]">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              disabled={!profileUser}
+              className="btn btn-ghost !px-4 !py-2 !text-[12.5px]"
+            >
               <PencilLine size={14} /> Edit Profile
             </button>
           </div>
