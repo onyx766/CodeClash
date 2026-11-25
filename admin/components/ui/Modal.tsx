@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { Button, Notice } from "./Primitives";
+import { IconAlert } from "./Icons";
 
 /**
  * Centered dialog over a dimmed backdrop. Escape or a click outside closes it.
@@ -50,5 +52,66 @@ export function Modal({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Asks before an action that cannot be taken back. The caller owns the busy
+ * and error state, so a refusal from the server is shown in the dialog,
+ * where the admin is looking, instead of somewhere off-screen.
+ */
+export function ConfirmDialog({
+  title,
+  description,
+  icon,
+  confirmLabel,
+  confirmIcon,
+  danger,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  confirmLabel: string;
+  confirmIcon?: ReactNode;
+  /** Styles the confirm button as destructive. */
+  danger?: boolean;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <Modal title={title} description={description} icon={icon} onClose={onCancel}>
+      <div className="space-y-4 p-5">
+        {error ? (
+          <Notice tone="rose">
+            <span className="flex items-start gap-2">
+              <IconAlert size={15} className="mt-px shrink-0" />
+              {error}
+            </span>
+          </Notice>
+        ) : null}
+
+        {children}
+
+        <div className="flex justify-end gap-2">
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button
+            variant={danger ? "danger" : "primary"}
+            loading={busy}
+            icon={confirmIcon}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

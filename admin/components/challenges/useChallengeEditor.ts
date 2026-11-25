@@ -131,7 +131,7 @@ export function useChallengeEditor() {
       setError(describe(caught));
       return null;
     } finally {
-      if (ticket === sequence.current) setSaving(false);
+      setSaving(false);
     }
   }, [draft, challengeId, applyChallenge]);
 
@@ -166,7 +166,7 @@ export function useChallengeEditor() {
       setValidationError(describe(caught));
       setToast({ tone: "amber", message: "Validation could not be completed." });
     } finally {
-      if (ticket === sequence.current) setValidating(false);
+      setValidating(false);
     }
   }, [challengeId]);
 
@@ -187,8 +187,37 @@ export function useChallengeEditor() {
       setError(describe(caught));
       setToast({ tone: "rose", message: "Publish refused by the server." });
     } finally {
-      if (ticket === sequence.current) setPublishing(false);
+      setPublishing(false);
     }
+  }, [challengeId]);
+
+  /**
+   * Takes a published challenge out of rotation: new matches stop picking it,
+   * while matches already played keep resolving it. Throws when the server
+   * refuses, so the confirmation dialog can say why.
+   */
+  const archive = useCallback(async () => {
+    if (!challengeId) return;
+    const ticket = ++sequence.current;
+    const response = await challengeService.archive(challengeId);
+    if (ticket !== sequence.current) return;
+    setStatus(response.challenge.status);
+    setValidationStatus(response.challenge.validation.status);
+    setToast({
+      tone: "green",
+      message: "Challenge archived. New matches will no longer use it.",
+    });
+  }, [challengeId]);
+
+  /**
+   * Permanently deletes a draft or archived challenge. The server refuses
+   * (CHALLENGE_IN_USE) once any match has used it; that error is thrown to the
+   * caller.
+   */
+  const remove = useCallback(async () => {
+    if (!challengeId) return;
+    ++sequence.current;
+    await challengeService.remove(challengeId);
   }, [challengeId]);
 
   /**
@@ -234,6 +263,8 @@ export function useChallengeEditor() {
     save,
     validate,
     publish,
+    archive,
+    remove,
     adoptChallenge,
     /** Opens an existing challenge as saved (no toast). */
     loadChallenge: applyChallenge,

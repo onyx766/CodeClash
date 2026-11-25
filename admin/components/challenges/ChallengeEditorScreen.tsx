@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../lib/api";
 import { challengeService } from "../../services/challenge.service";
 import { useRequireAdmin } from "../../hooks/useAdminAuth";
 import { AdminShell } from "../layout/AdminShell";
 import { Badge, Button, Notice, cx } from "../ui/Primitives";
-import { IconSpinner, IconTrophy } from "../ui/Icons";
+import { ConfirmDialog } from "../ui/Modal";
+import { IconArchive, IconSpinner, IconTrash, IconTrophy } from "../ui/Icons";
 import { CreationModeSelector, type CreationMode } from "./CreationModeSelector";
 import { BasicInformationSection } from "./BasicInformationSection";
 import { FunctionContractEditor } from "./FunctionContractEditor";
@@ -34,6 +36,7 @@ const VALIDATION_TONE = { PASSED: "green", FAILED: "rose", NOT_CHECKED: "neutral
  */
 export function ChallengeEditorScreen({ challengeId }: { challengeId?: string }) {
   const { loading, isAdmin } = useRequireAdmin();
+  const router = useRouter();
   const editor = useChallengeEditor();
   const { loadChallenge } = editor;
   const isEdit = !!challengeId;
@@ -52,6 +55,10 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin || !challengeId) return;
@@ -172,6 +179,36 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
     }
   }, []);
 
+  const openConfirm = (action: "archive" | "delete") => {
+    setConfirmError(null);
+    setConfirming(action);
+  };
+
+  const runConfirmed = async () => {
+    const action = confirming;
+    if (!action) return;
+    setConfirmBusy(true);
+    setConfirmError(null);
+    try {
+      if (action === "archive") {
+        await editor.archive();
+        setConfirming(null);
+        setConfirmBusy(false);
+      } else {
+        await editor.remove();
+        // Stays busy until the list replaces this page.
+        router.replace("/challenges");
+      }
+    } catch (caught) {
+      setConfirmError(
+        caught instanceof ApiError
+          ? caught.message
+          : `The challenge could not be ${action === "archive" ? "archived" : "deleted"}.`,
+      );
+      setConfirmBusy(false);
+    }
+  };
+
   if (loading || !isAdmin || (isEdit && !loaded && !loadError)) {
     return (
       <div className="grid min-h-screen place-items-center">
@@ -200,6 +237,10 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
   const locked = editor.status === "PUBLISHED";
   const title = isEdit ? editor.draft.title || "Untitled challenge" : "Create Challenge";
   const poolEntry = pool?.challenges.find((c) => c.id === editor.challengeId) ?? null;
+  // Archiving the challenge that keeps the pool above the per-match minimum
+  // stops every new match from starting.
+  const archiveEmptiesPool =
+    !!pool && !!poolEntry?.eligible && pool.eligibleCount - 1 < pool.challengeCount;
 
   return (
     <AdminShell
@@ -251,8 +292,8 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
           <div className="mt-3">
             <Notice tone="amber">
               This challenge is published. Its tests, contract, judging and limits are frozen so live and
-              historical matches cannot change underneath them — archive it to author a new version. You can
-              still run its checks.
+              historical matches cannot change underneath them. To change them, archive it, edit and re-validate
+              it, then publish it again. You can still run its checks.
             </Notice>
           </div>
         ) : null}
@@ -310,6 +351,7 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
               running={editor.busy.validating}
               stale={editor.validationStale}
               error={editor.validationError}
+              disabled={editor.busy.saving || editor.busy.publishing}
               onValidate={editor.validate}
             />
             {editor.challengeId ? <BattleEligibilityCard entry={poolEntry} pool={pool} /> : null}
@@ -344,9 +386,73 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
         onValidate={editor.validate}
         onPreview={() => setPreviewOpen(true)}
         onPublish={editor.publish}
+        onArchive={() => openConfirm("archive")}
+        onDelete={() => openConfirm("delete")}
       />
 
       {previewOpen ? <PreviewDialog draft={editor.draft} onClose={() => setPreviewOpen(false)} /> : null}
+
+      {confirming === "archive" ? (
+        <ConfirmDialog
+          title="Archive this challenge?"
+          description="New matches stop using it. Matches already played keep their results."
+          icon={
+            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] border border-amber/30 bg-amber/12 text-amber-300">
+              <IconArchive size={17} />
+            </span>
+          }
+          confirmLabel="Archive challenge"
+          confirmIcon={<IconArchive size={15} />}
+          busy={confirmBusy}
+          error={confirmError}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => void runConfirmed()}
+        >
+          <div className="rounded-[10px] border border-line bg-panel-2/50 px-3 py-2.5">
+            <p className="text-[12.5px] font-semibold text-fg">{editor.draft.title || "Untitled challenge"}</p>
+            <p className="mono text-[11.5px] text-dim">/{editor.draft.slug}</p>
+          </div>
+          {archiveEmptiesPool && pool ? (
+            <Notice tone="amber">
+              Only {pool.eligibleCount} challenges are battle-eligible and every match needs{" "}
+              {pool.challengeCount}. Until another one is published and validated, new matches cannot start.
+            </Notice>
+          ) : null}
+          <p className="text-[12px] leading-relaxed text-dim">
+            Once archived it can be edited, re-validated and published again.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+
+      {confirming === "delete" ? (
+        <ConfirmDialog
+          title="Delete this challenge?"
+          description="It is removed permanently, with all of its test cases. This cannot be undone."
+          icon={
+            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] border border-rose/30 bg-rose/12 text-rose-300">
+              <IconTrash size={17} />
+            </span>
+          }
+          confirmLabel="Delete challenge"
+          confirmIcon={<IconTrash size={15} />}
+          danger
+          busy={confirmBusy}
+          error={confirmError}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => void runConfirmed()}
+        >
+          <div className="rounded-[10px] border border-line bg-panel-2/50 px-3 py-2.5">
+            <p className="text-[12.5px] font-semibold text-fg">{editor.draft.title || "Untitled challenge"}</p>
+            <p className="mono text-[11.5px] text-dim">/{editor.draft.slug}</p>
+          </div>
+          {editor.status === "ARCHIVED" ? (
+            <p className="text-[12px] leading-relaxed text-dim">
+              If any match has used this challenge the server keeps it, so match history stays intact; it then
+              simply stays archived.
+            </p>
+          ) : null}
+        </ConfirmDialog>
+      ) : null}
     </AdminShell>
   );
 }
