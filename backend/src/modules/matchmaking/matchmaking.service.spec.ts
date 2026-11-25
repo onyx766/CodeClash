@@ -75,7 +75,18 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
     startQuickMatch: jest.fn().mockResolvedValue({ id: 'match-1', status: 'IN_PROGRESS' }),
   };
   const emit = jest.fn();
-  const socket = { server: { to: () => ({ emit }) } };
+  // Every emit together with the channel it went to, for per-player checks.
+  const sent: Array<{ to: string; event: string; payload: unknown }> = [];
+  const socket = {
+    server: {
+      to: (channel: string) => ({
+        emit: (event: string, payload: unknown) => {
+          sent.push({ to: channel, event, payload });
+          emit(event, payload);
+        },
+      }),
+    },
+  };
   const configValues: Record<string, number> = overrides?.config ?? {};
   const config = { get: jest.fn((key: string) => configValues[key]) };
 
@@ -92,7 +103,7 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
   }).compile();
 
   const service = module.get(MatchmakingService);
-  return { service, prisma, redis, rooms, matches, emit };
+  return { service, prisma, redis, rooms, matches, emit, sent };
 }
 
 describe('MatchmakingService', () => {
@@ -537,8 +548,12 @@ describe('MatchmakingService', () => {
   });
 
   describe('processReadyTimeouts', () => {
+    /** What each user channel received, minus the requeue's own events. */
+    const outcomes = (sent: Array<{ to: string; event: string; payload: unknown }>) =>
+      sent.filter((s) => s.event !== 'matchmaking:searching');
+
     it('cancels an expired match, requeues only the ready player, with no rating impact', async () => {
-      const { service, prisma, redis, emit } = await buildService();
+      const { service, prisma, redis, sent } = await buildService();
       prisma.match.findMany.mockResolvedValue([
         {
           id: 'match-1',
@@ -558,13 +573,22 @@ describe('MatchmakingService', () => {
         where: { id: 'match-1', status: 'PENDING_READY' },
         data: expect.objectContaining({ status: 'CANCELLED' }),
       });
-      expect(emit).toHaveBeenCalledWith('matchmaking:opponent-unavailable', { matchId: 'match-1' });
+      // The player who accepted hears the opponent did not; the one who did
+      // not accept hears that they missed the ready check.
+      expect(outcomes(sent)).toEqual([
+        {
+          to: 'user:no-show',
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-1', reason: 'READY_TIMEOUT' },
+        },
+        { to: 'user:ready-user', event: 'matchmaking:opponent-unavailable', payload: { matchId: 'match-1' } },
+      ]);
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'ready-user')).toBe('1500');
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'no-show')).toBeNull();
     });
 
-    it('cancels with no requeue when neither participant readied', async () => {
-      const { service, prisma, redis, emit } = await buildService();
+    it('tells both players they missed the ready check when neither accepted, and requeues nobody', async () => {
+      const { service, prisma, redis, sent } = await buildService();
       prisma.match.findMany.mockResolvedValue([
         {
           id: 'match-2',
@@ -580,9 +604,78 @@ describe('MatchmakingService', () => {
 
       await service.processReadyTimeouts();
 
-      expect(emit).toHaveBeenCalledWith('matchmaking:cancelled', { matchId: 'match-2' });
+      expect(sent).toEqual(
+        ['x', 'y'].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-2', reason: 'READY_TIMEOUT' },
+        })),
+      );
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'x')).toBeNull();
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'y')).toBeNull();
+    });
+
+    it('tells both players the match could not start when a READY match is stuck past the grace period', async () => {
+      const { service, prisma, redis, sent } = await buildService();
+      prisma.match.findMany.mockResolvedValue([
+        {
+          id: 'match-4',
+          status: 'READY',
+          readyDeadline: new Date(Date.now() - 31_000),
+          participants: [
+            { matchId: 'match-4', userId: 'x', readyAt: new Date(), ratingBefore: 1500 },
+            { matchId: 'match-4', userId: 'y', readyAt: new Date(), ratingBefore: 1500 },
+          ],
+        },
+      ]);
+      prisma.match.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.processReadyTimeouts();
+
+      expect(prisma.match.updateMany).toHaveBeenCalledWith({
+        where: { id: 'match-4', status: 'READY' },
+        data: expect.objectContaining({ status: 'CANCELLED' }),
+      });
+      expect(sent).toEqual(
+        ['x', 'y'].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-4', reason: 'START_FAILED' },
+        })),
+      );
+      expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'x')).toBeNull();
+      expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'y')).toBeNull();
+    });
+
+    it('gives a match both players accepted the start grace period even before it reached READY', async () => {
+      const { service, prisma, sent } = await buildService();
+      const bothAccepted = (readyDeadline: Date) => ({
+        id: 'match-5',
+        status: 'PENDING_READY',
+        readyDeadline,
+        participants: [
+          { matchId: 'match-5', userId: 'x', readyAt: new Date(), ratingBefore: 1500 },
+          { matchId: 'match-5', userId: 'y', readyAt: new Date(), ratingBefore: 1500 },
+        ],
+      });
+
+      // Just past the deadline: the second accept is moving it to READY.
+      prisma.match.findMany.mockResolvedValueOnce([bothAccepted(new Date(Date.now() - 1000))]);
+      await service.processReadyTimeouts();
+      expect(prisma.match.updateMany).not.toHaveBeenCalled();
+      expect(sent).toEqual([]);
+
+      // Still not started once the grace period is over.
+      prisma.match.findMany.mockResolvedValueOnce([bothAccepted(new Date(Date.now() - 31_000))]);
+      await service.processReadyTimeouts();
+      expect(prisma.match.updateMany).toHaveBeenCalledWith({
+        where: { id: 'match-5', status: 'PENDING_READY' },
+        data: expect.objectContaining({ status: 'CANCELLED' }),
+      });
+      expect(sent.map((s) => [s.to, s.payload])).toEqual([
+        ['user:x', { matchId: 'match-5', reason: 'START_FAILED' }],
+        ['user:y', { matchId: 'match-5', reason: 'START_FAILED' }],
+      ]);
     });
 
     it('skips a match whose timeout was already claimed by another instance/tick', async () => {

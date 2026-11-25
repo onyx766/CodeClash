@@ -220,8 +220,12 @@ export class MatchesService {
             ratingReason: 'INSUFFICIENT_BATTLE_CHALLENGES',
           },
         });
+        // Both players accepted; the match just could not start.
         for (const userId of userIds) {
-          this.socket.emitToUser(userId, SocketEvents.MATCHMAKING_CANCELLED, { matchId });
+          this.socket.emitToUser(userId, SocketEvents.MATCHMAKING_CANCELLED, {
+            matchId,
+            reason: 'START_FAILED',
+          });
         }
       }
       throw err;

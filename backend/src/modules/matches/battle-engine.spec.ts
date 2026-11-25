@@ -427,6 +427,14 @@ describe('Five-challenge battle engine', () => {
       expect(h.match(match.id)).toMatchObject({ status: 'CANCELLED', finishReason: 'SYSTEM_CANCELLED' });
       expect(h.prisma.rows('matchChallenge')).toHaveLength(0);
       expect(h.rating.applyMatchRating).not.toHaveBeenCalled();
+      // Both accepted, so both are told the match could not start.
+      expect(h.eventsNamed('matchmaking:cancelled')).toEqual(
+        [RYAN, MASTER1].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload: { matchId: match.id, reason: 'START_FAILED' },
+        })),
+      );
     });
   });
 
