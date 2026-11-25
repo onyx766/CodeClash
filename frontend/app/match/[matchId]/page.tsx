@@ -60,7 +60,8 @@ const STATUS_LABEL: Record<string, string> = {
 export default function MatchPage() {
   const params = useParams();
   const matchId = params.matchId as string;
-  const { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd } = useBattle(matchId);
+  const { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd, acceptedBy } =
+    useBattle(matchId);
   const { refreshActiveRoom } = useAuth();
   const { refetch: refetchProfile } = useProfile();
 
@@ -244,6 +245,7 @@ export default function MatchPage() {
         readyDeadline={readyDeadline}
         skewMs={clockSkewMs}
         readyCheckEnd={readyCheckEnd}
+        acceptedBy={acceptedBy}
         refresh={refresh}
       />
     );

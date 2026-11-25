@@ -48,6 +48,9 @@ export function useBattle(matchId: string) {
     () => recallMatchFound(matchId)?.readyDeadline ?? null,
   );
   const [readyCheckEnd, setReadyCheckEnd] = useState<ReadyCheckEnd | null>(null);
+  // Players who accepted the ready check, from match:ready (GET /matches/:id
+  // does not say who has accepted).
+  const [acceptedBy, setAcceptedBy] = useState<string[]>([]);
   const [statementsAttempt, setStatementsAttempt] = useState(0);
   // Polls, socket events and the player's own actions all re-read the match,
   // and their answers can arrive out of order. Only an answer at least as new
@@ -146,12 +149,18 @@ export function useBattle(matchId: string) {
     };
     const onCancelled = readyCheckEnded("cancelled");
     const onOpponentUnavailable = readyCheckEnded("opponent-unavailable");
+    const onAccepted = (payload?: { matchId?: string; userId?: string }) => {
+      const userId = payload?.userId;
+      if (payload?.matchId !== matchId || !userId) return;
+      setAcceptedBy((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+    };
 
     socket.on("disconnect", onDisconnect);
     LIVE_EVENTS.forEach((event) => socket.on(event, onEvent));
     socket.on("matchmaking:match-found", onFound);
     socket.on("matchmaking:cancelled", onCancelled);
     socket.on("matchmaking:opponent-unavailable", onOpponentUnavailable);
+    socket.on("match:ready", onAccepted);
     return () => {
       stopConnect();
       stopJoin();
@@ -161,10 +170,11 @@ export function useBattle(matchId: string) {
       socket.off("matchmaking:match-found", onFound);
       socket.off("matchmaking:cancelled", onCancelled);
       socket.off("matchmaking:opponent-unavailable", onOpponentUnavailable);
+      socket.off("match:ready", onAccepted);
     };
   }, [socket, matchId, refresh]);
 
   const readyDeadline = match?.readyDeadline ?? foundDeadline;
 
-  return { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd };
+  return { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd, acceptedBy };
 }

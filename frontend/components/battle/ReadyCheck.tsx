@@ -13,7 +13,15 @@ import useQuickMatch from "../../hooks/useQuickMatch";
 import { Avatar, avatarForUserId } from "../ui/Bits";
 import { Spinner } from "./BattlePanels";
 
-function Contender({ player, label }: { player: BattlePlayer | null; label: string }) {
+function Contender({
+  player,
+  label,
+  accepted = false,
+}: {
+  player: BattlePlayer | null;
+  label: string;
+  accepted?: boolean;
+}) {
   if (!player) return <div className="flex-1" />;
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
@@ -23,6 +31,11 @@ function Contender({ player, label }: { player: BattlePlayer | null; label: stri
         <Gem size={12} /> {player.rating}
       </p>
       <p className="eyebrow !text-[10px]">{label}</p>
+      {accepted && (
+        <p className="flex items-center gap-1 text-[12px] font-semibold text-emerald-300">
+          <Check size={13} /> Accepted
+        </p>
+      )}
     </div>
   );
 }
@@ -33,6 +46,7 @@ function WaitingToStart({
   readyDeadline,
   skewMs,
   accepted,
+  acceptedBy,
   accepting,
   error,
   onAccept,
@@ -41,6 +55,8 @@ function WaitingToStart({
   readyDeadline: string | null;
   skewMs: number;
   accepted: boolean;
+  /** Players the server announced as accepted (match:ready). */
+  acceptedBy: string[];
   accepting: boolean;
   error: string | null;
   onAccept: () => void;
@@ -106,9 +122,17 @@ function WaitingToStart({
       )}
 
       <div className="mt-6 flex items-start justify-center gap-4">
-        <Contender player={match.me} label={match.viewer === "SPECTATOR" ? "Player" : "You"} />
+        <Contender
+          player={match.me}
+          label={match.viewer === "SPECTATOR" ? "Player" : "You"}
+          accepted={match.viewer === "SPECTATOR" ? !!match.me && acceptedBy.includes(match.me.id) : accepted}
+        />
         <span className="mt-6 text-[22px] font-light italic text-dim">VS</span>
-        <Contender player={match.opponent} label={match.viewer === "SPECTATOR" ? "Player" : "Opponent"} />
+        <Contender
+          player={match.opponent}
+          label={match.viewer === "SPECTATOR" ? "Player" : "Opponent"}
+          accepted={!!match.opponent && acceptedBy.includes(match.opponent.id)}
+        />
       </div>
 
       <div className="mt-7">{body}</div>
@@ -209,15 +233,21 @@ export function ReadyCheck({
   readyDeadline,
   skewMs,
   readyCheckEnd,
+  acceptedBy,
   refresh,
 }: {
   match: BattleMatch;
   readyDeadline: string | null;
   skewMs: number;
   readyCheckEnd: ReadyCheckEnd | null;
+  /** Players the server announced as accepted (match:ready). */
+  acceptedBy: string[];
   refresh: () => Promise<unknown>;
 }) {
-  const [accepted, setAccepted] = useState(false);
+  const [acceptedHere, setAcceptedHere] = useState(false);
+  // Also true when the accept came from another tab of this player.
+  const accepted =
+    acceptedHere || (match.viewer === "PARTICIPANT" && !!match.me && acceptedBy.includes(match.me.id));
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -226,7 +256,7 @@ export function ReadyCheck({
     setError(null);
     try {
       await matchesApi.ready(match.id);
-      setAccepted(true);
+      setAcceptedHere(true);
     } catch (e) {
       // INVALID_MATCH_STATE: the match already started or was cancelled; the
       // refresh below shows which.
@@ -261,6 +291,7 @@ export function ReadyCheck({
               readyDeadline={readyDeadline}
               skewMs={skewMs}
               accepted={accepted}
+              acceptedBy={acceptedBy}
               accepting={accepting}
               error={error}
               onAccept={() => void accept()}
