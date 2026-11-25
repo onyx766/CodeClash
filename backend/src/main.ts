@@ -11,6 +11,10 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Run onModuleDestroy/onApplicationShutdown on SIGTERM/SIGINT so Prisma
+  // and Redis disconnect cleanly and background loops stop (docker stop).
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
   // Comma-separated so a dev can browse via both localhost and a LAN/VPN IP
   // (e.g. "http://localhost:3000,http://198.18.9.78:3000") without the
