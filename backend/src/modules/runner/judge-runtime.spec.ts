@@ -91,6 +91,64 @@ describe('code runner judge runtime', () => {
     expect(existsSync(RUNTIME)).toBe(true);
   });
 
+  describe('sandbox isolation', () => {
+    // A verdict a submission might try to print in place of the runtime's own.
+    const FORGED = JSON.stringify({ ok: true, tests: [], passedTests: 1, totalTests: 1, runtimeMs: 1 });
+    const oneTest = [
+      { id: 't1', input: { nums: [1], target: 1 }, expectedOutput: [0, 0], hidden: true, order: 0 },
+    ];
+
+    it.each([
+      ['module', 'module.constructor.constructor'],
+      ['exports', 'exports.constructor.constructor'],
+      ['console.log', 'console.log.constructor'],
+      ['the global object', 'this.constructor.constructor'],
+    ])('cannot reach the host process through %s to forge a verdict', (_label, route) => {
+      const source =
+        `const p = ${route}('return process')();\n` +
+        `p.stdout.write(${JSON.stringify(FORGED)} + '\\n');\n` +
+        'p.exit(0);';
+      const result = submission(source, oneTest);
+
+      // The last line is still the runtime's own verdict, not the forgery.
+      expect(result.jobId).toBe('test-job');
+      expect(result.passedTests).toBe(0);
+      expect(statusOf(result)).toBe('RUNTIME_ERROR');
+    });
+
+    it('cannot read the job file, which holds hidden expectations', () => {
+      const source =
+        'function solve() {\n' +
+        "  const p = this.constructor.constructor('return process')();\n" +
+        "  return JSON.parse(p.mainModule.require('fs').readFileSync('./job.json', 'utf8')).tests[0].expectedOutput;\n" +
+        '}';
+      const result = submission(source, oneTest);
+
+      expect(result.passedTests).toBe(0);
+      expect(statusOf(result)).toBe('RUNTIME_ERROR');
+      // Diagnostics for hidden tests are never echoed back.
+      expect(result.tests?.[0]?.message ?? null).toBeNull();
+    });
+
+    it('sees no Node.js globals', () => {
+      const probe =
+        'function solve() {\n' +
+        "  return [typeof process, typeof require, typeof Buffer].join(',');\n" +
+        '}';
+      const result = submission(probe, [
+        {
+          id: 't1',
+          input: { nums: [], target: 0 },
+          expectedOutput: 'undefined,undefined,undefined',
+          hidden: false,
+          order: 0,
+        },
+      ]);
+
+      expect(statusOf(result)).toBe('PASSED');
+    });
+  });
+
   describe('function calling convention', () => {
     it('maps a test input object onto positional arguments in contract order', () => {
       const result = submission(TWO_SUM, [

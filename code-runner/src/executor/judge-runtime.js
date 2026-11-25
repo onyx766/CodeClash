@@ -119,62 +119,82 @@ function preview(value) {
  * only bridge in or out is JSON text.
  */
 function createRealm(outputLimitBytes) {
-  const state = { output: 0, overflowed: false };
+  // The realm's global is a null-prototype object and NOTHING from this (host)
+  // realm is ever placed inside it. Any host object or function would be an
+  // escape hatch: `hostObject.constructor.constructor('return process')()`
+  // yields this process, from which a submission could print a forged verdict
+  // or read the hidden expectations in job.json. So console, the CommonJS
+  // shell, the output counter and the bridge are all created by code evaluated
+  // inside the realm, and only primitives (strings/numbers) cross the boundary.
+  const context = vm.createContext(Object.create(null));
 
-  const record = function () {
-    for (let i = 0; i < arguments.length; i++) {
-      const argument = arguments[i];
-      state.output +=
-        typeof argument === 'string' ? argument.length : 8;
-    }
-    if (state.output > outputLimitBytes) state.overflowed = true;
-  };
-
-  const sandbox = {
-    console: { log: record, error: record, warn: record, info: record, debug: record },
-    // Enough of a CommonJS shell that `module.exports = solve` also resolves.
-    // Deliberately no require/process/fs/Buffer: the context is created empty
-    // and only gets the standard built-ins plus what is listed here.
-    module: { exports: {} },
-    exports: {},
-  };
-  const context = vm.createContext(sandbox);
-
-  // Bridge helpers. Arguments and results cross the realm boundary as JSON
-  // text only, which keeps every value same-realm (so Array.isArray and
-  // instanceof behave) and makes the output limit measurable.
   vm.runInContext(
-    `globalThis.__bridge = {
-       target: null,
-       resolve: function (names) {
-         for (var i = 0; i < names.length; i++) {
-           var name = names[i];
-           var candidate;
-           try { candidate = eval(name); } catch (e) { candidate = undefined; }
-           if (typeof candidate === 'function') { __bridge.target = candidate; return name; }
+    `(function (limit) {
+       'use strict';
+       var state = { output: 0, overflowed: false };
+       var record = function () {
+         for (var i = 0; i < arguments.length; i++) {
+           var a = arguments[i];
+           state.output += typeof a === 'string' ? a.length : 8;
          }
-         if (typeof module !== 'undefined' && module && module.exports) {
-           var exported = module.exports;
-           if (typeof exported === 'function') { __bridge.target = exported; return 'module.exports'; }
-           for (var j = 0; j < names.length; j++) {
-             if (typeof exported[names[j]] === 'function') { __bridge.target = exported[names[j]]; return 'module.exports.' + names[j]; }
+         if (state.output > limit) state.overflowed = true;
+       };
+       var root = globalThis;
+       root.console = { log: record, error: record, warn: record, info: record, debug: record };
+       // Enough of a CommonJS shell that \`module.exports = solve\` also resolves.
+       root.module = { exports: {} };
+       root.exports = root.module.exports;
+       Object.defineProperty(root, '__overflowed', {
+         get: function () { return state.overflowed === true; },
+       });
+       root.__bridge = {
+         target: null,
+         resolve: function (namesJson) {
+           var names = JSON.parse(namesJson);
+           for (var i = 0; i < names.length; i++) {
+             var name = names[i];
+             var candidate;
+             try { candidate = (0, eval)(name); } catch (e) { candidate = undefined; }
+             if (typeof candidate === 'function') { root.__bridge.target = candidate; return name; }
            }
-           if (typeof exported.default === 'function') { __bridge.target = exported.default; return 'module.exports.default'; }
-         }
-         return null;
-       },
-       call: function (argsJson) {
-         var args = JSON.parse(argsJson);
-         var result = __bridge.target.apply(undefined, args);
-         if (result && typeof result.then === 'function') return 'A';
-         return 'V' + JSON.stringify({ v: result });
-       }
-     };`,
+           var mod = root.module;
+           if (mod && mod.exports) {
+             var exported = mod.exports;
+             if (typeof exported === 'function') { root.__bridge.target = exported; return 'module.exports'; }
+             for (var j = 0; j < names.length; j++) {
+               if (typeof exported[names[j]] === 'function') { root.__bridge.target = exported[names[j]]; return 'module.exports.' + names[j]; }
+             }
+             if (typeof exported.default === 'function') { root.__bridge.target = exported.default; return 'module.exports.default'; }
+           }
+           return null;
+         },
+         call: function (argsJson) {
+           var args = JSON.parse(argsJson);
+           var result = root.__bridge.target.apply(undefined, args);
+           if (result && typeof result.then === 'function') return 'A';
+           return 'V' + JSON.stringify({ v: result });
+         },
+       };
+     })(${Number(outputLimitBytes) || 0});`,
     context,
     { filename: 'codeclash-bridge.js' },
   );
 
-  return { context, state };
+  return {
+    context,
+    // Read through the realm rather than holding a host-side reference the
+    // realm could reach. The getter is non-configurable, so solution code
+    // cannot redefine it.
+    state: {
+      get overflowed() {
+        try {
+          return vm.runInContext('__overflowed', context, { timeout: 100 }) === true;
+        } catch (error) {
+          return true;
+        }
+      },
+    },
+  };
 }
 
 function compile(code, filename) {
@@ -211,8 +231,9 @@ function loadEntry(code, filename, names, limits, outputLimitBytes) {
 
   let resolvedAs = null;
   try {
-    realm.context.__names = names;
-    resolvedAs = vm.runInContext('__bridge.resolve(__names)', realm.context, {
+    // A JSON string, not the array itself: host arrays must never enter the realm.
+    realm.context.__namesJson = JSON.stringify(names);
+    resolvedAs = vm.runInContext('__bridge.resolve(__namesJson)', realm.context, {
       timeout: limits.timeLimitMs,
     });
   } catch (error) {
