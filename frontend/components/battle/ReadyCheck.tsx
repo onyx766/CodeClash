@@ -7,8 +7,12 @@ import { useRouter } from "next/navigation";
 import { Check, Gem, Swords, X, Zap } from "lucide-react";
 import { ApiError, matches as matchesApi } from "../../lib/api";
 import type { BattleMatch, BattlePlayer } from "../../lib/battle";
-import { readyCheckAcceptance } from "../../lib/matchmaking";
-import type { ReadyCheckEnd } from "../../hooks/useBattle";
+import {
+  readyCheckAcceptance,
+  readyCheckFailure,
+  type ReadyCheckEnd,
+  type ReadyCheckFailure,
+} from "../../lib/matchmaking";
 import useNow, { formatElapsed } from "../../hooks/useNow";
 import useQuickMatch from "../../hooks/useQuickMatch";
 import { Avatar, avatarForUserId } from "../ui/Bits";
@@ -139,13 +143,22 @@ function WaitingToStart({
   );
 }
 
+const FAILURE_REASON: Record<ReadyCheckFailure, (opponentName: string) => string> = {
+  "start-failed": () => "The match could not be started. Please try again in a moment.",
+  // The server does not put a player who missed the ready check back in the queue.
+  "you-timed-out": () => "You didn't accept the match in time.",
+  "opponent-timed-out": (opponentName) => `${opponentName} didn't accept in time.`,
+  "timed-out": () => "The match was cancelled because it wasn't accepted in time.",
+};
+
 function CancelledBeforeStart({
   match,
   accepted,
   readyCheckEnd,
 }: {
   match: BattleMatch;
-  accepted: boolean;
+  /** Who had accepted. */
+  accepted: { me: boolean; opponent: boolean };
   readyCheckEnd: ReadyCheckEnd | null;
 }) {
   const router = useRouter();
@@ -160,14 +173,7 @@ function CancelledBeforeStart({
     void sync();
   }, [sync]);
 
-  let reason: string;
-  if (match.finishReason === "SYSTEM_CANCELLED") {
-    reason = "The match could not be started. Please try again in a moment.";
-  } else if (readyCheckEnd === "opponent-unavailable" || accepted) {
-    reason = `${opponentName} didn't accept in time.`;
-  } else {
-    reason = "The match was cancelled because it wasn't accepted in time.";
-  }
+  const reason = FAILURE_REASON[readyCheckFailure(match, readyCheckEnd, accepted)](opponentName);
 
   return (
     <>
@@ -280,7 +286,7 @@ export function ReadyCheck({
       <main className="flex flex-1 items-center justify-center p-4">
         <section className="card w-full max-w-[560px] p-6 text-center sm:p-8" aria-live="polite">
           {match.status === "CANCELLED" ? (
-            <CancelledBeforeStart match={match} accepted={accepted.me} readyCheckEnd={readyCheckEnd} />
+            <CancelledBeforeStart match={match} accepted={accepted} readyCheckEnd={readyCheckEnd} />
           ) : (
             <WaitingToStart
               match={match}

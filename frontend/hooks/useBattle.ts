@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, matches as matchesApi } from "../lib/api";
 import { joinChannel, onEveryConnect } from "../lib/socket";
 import type { BattleMatch, ChallengeStatement, MatchStatus } from "../lib/battle";
-import { recallMatchFound, type MatchFoundPayload } from "../lib/matchmaking";
+import {
+  readyCheckEndFor,
+  recallMatchFound,
+  type MatchFoundPayload,
+  type MatchmakingCancelledPayload,
+  type ReadyCheckEnd,
+} from "../lib/matchmaking";
 import useSocket from "./useSocket";
 
 // Every one of these only means "something changed" - the handler refetches
@@ -23,9 +29,6 @@ const LIVE_EVENTS = [
 
 /** Statuses of a match that has not started yet (a Quick Match ready check). */
 export const AWAITING_START: MatchStatus[] = ["PENDING", "PENDING_READY", "READY"];
-
-/** How a Quick Match ready check ended, as far as this player was told. */
-export type ReadyCheckEnd = "cancelled" | "opponent-unavailable";
 
 export type BattleLoadError = { status: number; code?: string; message: string };
 
@@ -143,13 +146,15 @@ export function useBattle(matchId: string) {
     const onFound = (payload?: MatchFoundPayload) => {
       if (payload?.matchId === matchId && payload.readyDeadline) setFoundDeadline(payload.readyDeadline);
     };
-    const readyCheckEnded = (end: ReadyCheckEnd) => (payload?: { matchId?: string }) => {
+    const readyCheckEnded = (end: ReadyCheckEnd, payload?: { matchId?: string }) => {
       if (payload?.matchId !== matchId) return;
       setReadyCheckEnd(end);
       void refresh();
     };
-    const onCancelled = readyCheckEnded("cancelled");
-    const onOpponentUnavailable = readyCheckEnded("opponent-unavailable");
+    // READY_TIMEOUT: this player did not accept in time; START_FAILED: both
+    // did, but the match could not be started.
+    const onCancelled = (payload?: MatchmakingCancelledPayload) => readyCheckEnded(readyCheckEndFor(payload), payload);
+    const onOpponentUnavailable = (payload?: { matchId?: string }) => readyCheckEnded("opponent-unavailable", payload);
     const onAccepted = (payload?: { matchId?: string; userId?: string }) => {
       const userId = payload?.userId;
       if (payload?.matchId !== matchId || !userId) return;

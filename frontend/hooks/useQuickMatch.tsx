@@ -4,26 +4,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname, useRouter } from "next/navigation";
 import { ApiError, auth, matches as matchesApi, matchmaking as matchmakingApi } from "../lib/api";
 import {
+  describeCancellation,
   rememberMatchFound,
   type MatchFoundPayload,
+  type MatchmakingCancelledPayload,
   type MatchmakingState,
+  type QuickMatchNotice,
   type RatingRange,
 } from "../lib/matchmaking";
 import useAuth from "./useAuth";
 import useSocket from "./useSocket";
 
+export type { QuickMatchNotice };
+
 export type QuickMatchPhase = "idle" | "starting" | "searching" | "cancelling";
 
 export type QuickMatchSearch = { joinedAt: string; rating: number; ratingRange: RatingRange };
-
-export type QuickMatchNotice = {
-  tone: "info" | "error";
-  text: string;
-  /** Where the player can resolve it, e.g. the room or match that blocks a search. */
-  action?: { label: string; href: string };
-  /** Offer to search again. */
-  retry?: boolean;
-};
 
 type QuickMatchContextValue = {
   phase: QuickMatchPhase;
@@ -261,31 +257,19 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
       update(owner, { phase: "idle", search: null, notice: null });
       openMatch(payload.matchId);
     };
-    const onCancelled = (payload: { matchId?: string; reason?: string }) => {
-      if (payload?.matchId) {
-        // A ready check nobody passed. The battle page explains it in detail.
-        update(owner, { notice: { tone: "info", text: "The match was cancelled before it started.", retry: true } });
+    const onCancelled = (payload?: MatchmakingCancelledPayload) => {
+      const { readyCheck, notice } = describeCancellation(payload);
+      if (readyCheck) {
+        // A ready check that failed: the battle page explains it in detail,
+        // the lobby shows the notice. Whoever accepted in time hears
+        // matchmaking:opponent-unavailable instead and is back in the queue.
+        update(owner, { notice });
         return;
       }
       // No match involved: the server took us out of the queue.
-      update(owner, (prev) => {
-        if (prev.phase !== "searching" && prev.phase !== "cancelling") return {};
-        if (payload?.reason === "STALE") {
-          return {
-            phase: "idle",
-            search: null,
-            notice: {
-              tone: "error",
-              text: "You were removed from the queue because the connection was lost.",
-              retry: true,
-            },
-          };
-        }
-        // JOINED_ROOM: taking a seat in a private room ends the search, which
-        // is what the player asked for - nothing to report.
-        if (payload?.reason === "JOINED_ROOM") return { phase: "idle", search: null, notice: null };
-        return { phase: "idle", search: null, notice: { tone: "info", text: "Your search has stopped.", retry: true } };
-      });
+      update(owner, (prev) =>
+        prev.phase === "searching" || prev.phase === "cancelling" ? { phase: "idle", search: null, notice } : {},
+      );
     };
     const onOpponentUnavailable = () => {
       // The server puts whoever accepted straight back in the queue.
