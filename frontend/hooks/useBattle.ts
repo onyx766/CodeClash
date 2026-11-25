@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, matches as matchesApi } from "../lib/api";
-import { getSocket } from "../lib/socket";
+import { joinChannel, onEveryConnect } from "../lib/socket";
 import type { BattleMatch, ChallengeStatement } from "../lib/battle";
+import useSocket from "./useSocket";
 
 // Every one of these only means "something changed" - the handler refetches
 // GET /matches/:id rather than trusting the payload, so a missed or duplicated
@@ -26,6 +27,7 @@ export type BattleLoadError = { status: number; code?: string; message: string }
  * reconnect, so events missed while offline are caught up.
  */
 export function useBattle(matchId: string) {
+  const socket = useSocket();
   const [match, setMatch] = useState<BattleMatch | null>(null);
   const [statements, setStatements] = useState<ChallengeStatement[] | null>(null);
   const [error, setError] = useState<BattleLoadError | null>(null);
@@ -73,30 +75,30 @@ export function useBattle(matchId: string) {
   }, [matchId]);
 
   useEffect(() => {
-    const socket = getSocket();
-    const join = () =>
-      socket.emit("match:join", { matchId }, (ack?: { ok?: boolean }) => setLive(!!ack?.ok));
-    const onReconnect = () => {
-      join();
-      void refresh();
-    };
+    if (!socket) return;
+    let stopJoin = () => {};
+    const stopConnect = onEveryConnect(socket, (reconnected) => {
+      stopJoin();
+      stopJoin = joinChannel(socket, "match:join", { matchId }, (ack) => setLive(!!ack.ok));
+      // Catch up on anything that happened while disconnected.
+      if (reconnected) void refresh();
+    });
     const onDisconnect = () => setLive(false);
     const onEvent = (payload?: { matchId?: string }) => {
       if (payload?.matchId && payload.matchId !== matchId) return;
       void refresh();
     };
 
-    if (socket.connected) join();
-    socket.on("connect", onReconnect);
     socket.on("disconnect", onDisconnect);
     LIVE_EVENTS.forEach((event) => socket.on(event, onEvent));
     return () => {
-      socket.emit("match:leave", { matchId });
-      socket.off("connect", onReconnect);
+      stopConnect();
+      stopJoin();
+      if (socket.connected) socket.emit("match:leave", { matchId });
       socket.off("disconnect", onDisconnect);
       LIVE_EVENTS.forEach((event) => socket.off(event, onEvent));
     };
-  }, [matchId, refresh]);
+  }, [socket, matchId, refresh]);
 
   return { match, statements, error, live, clockSkewMs, refresh };
 }

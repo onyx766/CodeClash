@@ -2,8 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, onSessionExpired } from "../lib/api";
+import { auth, onSessionExpired, onSessionRefreshed } from "../lib/api";
 import { authHref, currentPathWithQuery, isAuthPage } from "../lib/navigation";
+import { connectSocket, disconnectSocket, recreateSocket } from "../lib/socket";
 
 export type AuthUser = {
   id: string;
@@ -67,6 +68,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // One socket per signed-in player: a fresh one whenever the user changes
+  // (so nothing bound to the previous identity survives), none when signed out.
+  const userId = user?.id ?? null;
+  useEffect(() => {
+    if (userId) connectSocket(userId);
+    else disconnectSocket();
+  }, [userId]);
+
+  // The server authenticates a socket only at its handshake, so reconnect
+  // with the renewed cookie after every refresh.
+  useEffect(() => onSessionRefreshed(recreateSocket), []);
 
   // The API client could not renew the session (refresh refused or account
   // banned): sign out here and send the player to the login page, which

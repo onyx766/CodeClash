@@ -20,10 +20,11 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { getSocket } from "../../../lib/socket";
+import { joinChannel, onEveryConnect } from "../../../lib/socket";
 import { rooms, ApiError } from "../../../lib/api";
 import { ACTIVE_MATCH_STATUSES, type MatchStatus } from "../../../lib/battle";
 import useAuth from "../../../hooks/useAuth";
+import useSocket from "../../../hooks/useSocket";
 import { currentUser } from "../../../lib/demo";
 import { Avatar, avatarForUserId } from "../../../components/ui/Bits";
 
@@ -70,6 +71,8 @@ export default function RoomPage() {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
 
+  const socket = useSocket();
+
   useEffect(() => {
     rooms
       .get(roomId)
@@ -87,14 +90,15 @@ export default function RoomPage() {
           router.replace("/lobby");
         }
       });
-    const s = getSocket();
+  }, [roomId, router, clearActiveRoom]);
+
+  useEffect(() => {
+    if (!socket) return;
     // Sent to both players' user channels when the host starts the match.
     const onMatchStarted = (payload: { matchId?: string }) => {
       if (payload?.matchId) router.push(`/match/${payload.matchId}`);
     };
-    s.on("match:started", onMatchStarted);
-    s.emit("room:join", { roomId });
-    s.on("room:update", (payload: { room?: Room | null }) => {
+    const onRoomUpdate = (payload: { room?: Room | null }) => {
       if (payload.room) {
         setRoom(payload.room);
       } else if (payload.room === null) {
@@ -103,13 +107,24 @@ export default function RoomPage() {
         clearActiveRoom();
         router.replace("/lobby");
       }
-    });
-    return () => {
-      s.emit("room:leave", { roomId });
-      s.off("room:update");
-      s.off("match:started", onMatchStarted);
     };
-  }, [roomId]);
+    // Room subscriptions belong to one connection: join again after every
+    // reconnect, and on a new socket after login or a session refresh.
+    let stopJoin = () => {};
+    const stopConnect = onEveryConnect(socket, () => {
+      stopJoin();
+      stopJoin = joinChannel(socket, "room:join", { roomId });
+    });
+    socket.on("match:started", onMatchStarted);
+    socket.on("room:update", onRoomUpdate);
+    return () => {
+      stopConnect();
+      stopJoin();
+      if (socket.connected) socket.emit("room:leave", { roomId });
+      socket.off("room:update", onRoomUpdate);
+      socket.off("match:started", onMatchStarted);
+    };
+  }, [socket, roomId, router, clearActiveRoom]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
