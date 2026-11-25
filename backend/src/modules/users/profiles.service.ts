@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   ProfileNotFoundException,
@@ -61,6 +62,12 @@ export class ProfilesService {
         challengesSolved: user.stats.challengesSolved,
         coins: user.stats.coins,
         xp: user.stats.xp,
+        draws: user.stats.draws,
+        // Private-room (unrated) results, tracked separately from ranked play.
+        casualWins: user.stats.casualWins,
+        casualLosses: user.stats.casualLosses,
+        casualDraws: user.stats.casualDraws,
+        casualMatchesPlayed: user.stats.casualMatchesPlayed,
       },
       preferences: {
         favoriteLanguages: user.preferences.favoriteLanguages,
@@ -102,6 +109,7 @@ export class ProfilesService {
         globalRank,
         wins: user.stats.wins,
         losses: user.stats.losses,
+        draws: user.stats.draws,
         winRate: calculateWinRate(user.stats.wins, user.stats.matchesPlayed),
         bestStreak: user.stats.bestStreak,
         challengesSolved: user.stats.challengesSolved,
@@ -158,9 +166,17 @@ export class ProfilesService {
     return this.getMyProfile(userId);
   }
 
+  /**
+   * 1-based position among ranked players - the same population as the
+   * leaderboard (active USER accounts), so staff and banned accounts do not
+   * push players down.
+   */
   private async getGlobalRank(rating: number): Promise<number> {
     const higherRated = await this.prisma.userStats.count({
-      where: { rating: { gt: rating } },
+      where: {
+        rating: { gt: rating },
+        user: { role: Role.USER, status: UserStatus.ACTIVE },
+      },
     });
     return higherRated + 1;
   }

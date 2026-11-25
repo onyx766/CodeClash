@@ -47,6 +47,11 @@ describe('ProfilesService', () => {
       challengesSolved: 128,
       coins: 2430,
       xp: 3450,
+      draws: 4,
+      casualWins: 9,
+      casualLosses: 6,
+      casualDraws: 1,
+      casualMatchesPlayed: 16,
     },
     preferences: {
       favoriteLanguages: ['JavaScript', 'TypeScript'],
@@ -95,9 +100,20 @@ describe('ProfilesService', () => {
         joinedAt: fullUser.createdAt,
       });
       expect(result.stats.globalRank).toBe(3);
+      // Ranked among active players only, like the leaderboard.
+      expect(prisma.userStats.count).toHaveBeenCalledWith({
+        where: { rating: { gt: fullUser.stats.rating }, user: { role: 'USER', status: 'ACTIVE' } },
+      });
       expect(result.stats.winRate).toBeCloseTo(75.29, 2);
       expect(result.stats.matchesPlayed).toBe(170);
       expect(result.stats.coins).toBe(2430);
+      expect(result.stats).toMatchObject({
+        draws: 4,
+        casualWins: 9,
+        casualLosses: 6,
+        casualDraws: 1,
+        casualMatchesPlayed: 16,
+      });
       expect(result.preferences).toEqual({
         favoriteLanguages: ['JavaScript', 'TypeScript'],
         favoriteTopics: ['Arrays', 'Graph'],

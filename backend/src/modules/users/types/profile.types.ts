@@ -49,6 +49,11 @@ export interface PrivateProfileStats {
   challengesSolved: number;
   coins: number;
   xp: number;
+  draws: number;
+  casualWins: number;
+  casualLosses: number;
+  casualDraws: number;
+  casualMatchesPlayed: number;
 }
 
 export interface PublicProfileStats {
@@ -56,6 +61,7 @@ export interface PublicProfileStats {
   globalRank: number;
   wins: number;
   losses: number;
+  draws: number;
   winRate: number;
   bestStreak: number;
   challengesSolved: number;
