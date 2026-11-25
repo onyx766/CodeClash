@@ -70,4 +70,6 @@ validation passed.
 
 ## Location
 
-On registration and successful login, the API makes a best-effort attempt to resolve `country`/`region`/`city`/`timezone` from the request's public IP address (see `GeolocationService`). This is approximate - derived from network IP, not GPS - and can be inaccurate or unavailable behind VPNs, proxies, mobile networks, or corporate NAT. Local/private IPs are never sent to the geolocation provider, and a failed or slow lookup never blocks registration or login. No street address, postal address, or GPS coordinates are ever requested or stored, and the raw IP itself is not persisted.
+IP geolocation is **off by default** (`GEOLOCATION_PROVIDER=none`): no player's IP address is sent anywhere. Set `GEOLOCATION_PROVIDER=ip-api` (free, plain HTTP) or `ipapi` (HTTPS, optional `GEOLOCATION_API_KEY`) to enable it; tell your players, since their IP is then shared with that provider.
+
+When enabled, on registration and successful login the API makes a best-effort attempt to resolve `country`/`region`/`city`/`timezone` from the request's public IP address (see `GeolocationService`). This is approximate - derived from network IP, not GPS - and can be inaccurate or unavailable behind VPNs, proxies, mobile networks, or corporate NAT. Local/private IPs are never sent to the geolocation provider, and a failed or slow lookup never blocks registration or login. No street address, postal address, or GPS coordinates are ever requested or stored, and the raw IP itself is not persisted.

@@ -33,15 +33,18 @@ export class GeolocationService {
   private readonly timeoutMs: number;
 
   constructor(private readonly config: ConfigService) {
+    // Off unless an operator opts in: a lookup sends the player's IP address
+    // to a third party (ip-api.com's free tier only speaks plain HTTP).
     this.provider =
       (this.config.get<string>(
         'GEOLOCATION_PROVIDER',
-      ) as GeolocationProviderName) || 'ip-api';
+      ) as GeolocationProviderName) || 'none';
     this.apiKey = this.config.get<string>('GEOLOCATION_API_KEY') || undefined;
     this.timeoutMs = this.config.get<number>('GEOLOCATION_TIMEOUT_MS') ?? 2000;
   }
 
   async getLocationFromIp(ip: string): Promise<GeoLocation | null> {
+    if (this.provider === 'none') return null;
     try {
       switch (this.provider) {
         case 'ipapi':

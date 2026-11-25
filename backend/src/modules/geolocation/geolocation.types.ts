@@ -10,4 +10,5 @@ export interface GeoLocation {
   timezone: string | null;
 }
 
-export type GeolocationProviderName = 'ip-api' | 'ipapi';
+/** `none` disables lookups entirely (the default): no IP leaves the server. */
+export type GeolocationProviderName = 'none' | 'ip-api' | 'ipapi';

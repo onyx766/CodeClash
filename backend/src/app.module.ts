@@ -41,9 +41,10 @@ import { AppService } from './app.service';
         // client address (see TRUST_PROXY_HOPS behind a reverse proxy).
         THROTTLE_LIMIT: Joi.number().integer().min(1).default(300),
         THROTTLE_TTL_MS: Joi.number().integer().min(1000).default(60_000),
+        // IP geolocation is opt-in: 'none' sends nothing to a third party.
         GEOLOCATION_PROVIDER: Joi.string()
-          .valid('ip-api', 'ipapi')
-          .default('ip-api'),
+          .valid('none', 'ip-api', 'ipapi')
+          .default('none'),
         GEOLOCATION_API_KEY: Joi.string().allow('').optional(),
         GEOLOCATION_TIMEOUT_MS: Joi.number().integer().min(0).default(2000),
         GEOLOCATION_DEV_IP: Joi.string().allow('').optional(),
