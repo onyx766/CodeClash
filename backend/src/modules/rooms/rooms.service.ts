@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import {
   MatchAlreadyStartedException,
   RoomAlreadyHostedException,
@@ -38,7 +39,20 @@ function withCasualMetadata<T>(room: T) {
 
 @Injectable()
 export class RoomsService {
-  constructor(private prisma: PrismaService, private redis: RedisService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+    private socket: SocketGateway,
+  ) {}
+
+  /** Best-effort live update for the room page; never fails the request. */
+  private async announceRoom(roomId: string) {
+    try {
+      await this.socket.broadcastRoom(roomId);
+    } catch {
+      // Clients also poll GET /rooms/:id, so a missed push only delays them.
+    }
+  }
 
   private async ensureUniqueCode() {
     for (let i = 0; i < 5; i++) {
@@ -125,6 +139,8 @@ export class RoomsService {
     const client = this.redis.getClient();
     await client.sadd(`room:${room.id}:players`, userId);
     await client.expire(`room:${room.id}:players`, 60 * 60 * 24);
+    // The host's room page learns about the new player right away.
+    await this.announceRoom(room.id);
     return { room: withCasualMetadata(room), player: rp };
   }
 
@@ -209,6 +225,9 @@ export class RoomsService {
     if (userId === room.hostId || remaining === 0) {
       await this.deleteRoomCascade(roomId);
     }
+    // The other player sees the departure, or { room: null } when the host
+    // cancelled and the room no longer exists.
+    await this.announceRoom(roomId);
     return { success: true };
   }
 }

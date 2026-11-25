@@ -221,7 +221,13 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return !!player;
   }
 
-  private async broadcastRoom(roomId: string) {
+  /**
+   * Pushes the room's current snapshot to its subscribers - or
+   * { room: null } once the room is gone (host left or cancelled), which
+   * clients treat as "return to the lobby". Called by the room:* handlers and
+   * by RoomsService after joins and leaves made over HTTP.
+   */
+  async broadcastRoom(roomId: string) {
     const room = await this.prisma.room.findUnique({
       where: { id: roomId },
       include: ROOM_SNAPSHOT_INCLUDE,

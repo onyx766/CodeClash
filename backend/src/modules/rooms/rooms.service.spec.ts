@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RoomsService } from './rooms.service';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 
 type MockPrisma = {
   room: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; findMany: jest.Mock };
@@ -13,13 +14,15 @@ type MockPrisma = {
 describe('RoomsService', () => {
   let service: RoomsService;
   let prisma: MockPrisma;
-  let redisClient: { sadd: jest.Mock; expire: jest.Mock; srem: jest.Mock };
+  let redisClient: { sadd: jest.Mock; expire: jest.Mock; srem: jest.Mock; del: jest.Mock };
+  let socket: { broadcastRoom: jest.Mock };
 
   const HOST_ID = 'host-1';
   const ROOM = { id: 'room-1', code: 'ABC123', hostId: HOST_ID, maxPlayers: 2 };
 
   beforeEach(async () => {
-    redisClient = { sadd: jest.fn(), expire: jest.fn(), srem: jest.fn() };
+    redisClient = { sadd: jest.fn(), expire: jest.fn(), srem: jest.fn(), del: jest.fn() };
+    socket = { broadcastRoom: jest.fn().mockResolvedValue(undefined) };
 
     prisma = {
       room: {
@@ -44,6 +47,7 @@ describe('RoomsService', () => {
         RoomsService,
         { provide: PrismaService, useValue: prisma },
         { provide: RedisService, useValue: { getClient: () => redisClient } },
+        { provide: SocketGateway, useValue: socket },
       ],
     }).compile();
 
@@ -136,10 +140,39 @@ describe('RoomsService', () => {
       expect(prisma.roomPlayer.create).toHaveBeenCalledWith({ data: { roomId: ROOM.id, userId: 'guest-1' } });
     });
 
+    it('pushes the new roster to the room', async () => {
+      prisma.roomPlayer.count.mockResolvedValue(1);
+      prisma.roomPlayer.findFirst.mockResolvedValue(null);
+      await service.joinRoomById('guest-1', ROOM.id);
+      expect(socket.broadcastRoom).toHaveBeenCalledWith(ROOM.id);
+    });
+
     it('refuses to seat a third player', async () => {
       prisma.roomPlayer.count.mockResolvedValue(2);
       await expect(service.joinRoomById('guest-2', ROOM.id)).rejects.toThrow('Room is full');
       expect(prisma.roomPlayer.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('leaveRoom', () => {
+    it('tells the room when a player leaves, including when the host cancels it', async () => {
+      prisma.room.findUnique.mockResolvedValue({ ...ROOM, match: null, status: 'WAITING' });
+      (prisma as any).roomInvitation = { deleteMany: jest.fn() };
+      (prisma as any).room.delete = jest.fn();
+      prisma.$transaction.mockResolvedValue([]);
+      prisma.roomPlayer.count.mockResolvedValue(1);
+
+      await service.leaveRoom(HOST_ID, ROOM.id);
+
+      expect(socket.broadcastRoom).toHaveBeenCalledWith(ROOM.id);
+    });
+
+    it('never fails the request when the push fails', async () => {
+      prisma.room.findUnique.mockResolvedValue({ ...ROOM, match: null, status: 'WAITING' });
+      prisma.roomPlayer.count.mockResolvedValue(1);
+      socket.broadcastRoom.mockRejectedValue(new Error('socket down'));
+
+      await expect(service.leaveRoom('guest-1', ROOM.id)).resolves.toEqual({ success: true });
     });
   });
 });
