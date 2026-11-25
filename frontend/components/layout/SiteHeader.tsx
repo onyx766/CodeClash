@@ -8,6 +8,7 @@ import Logo from "../ui/Logo";
 import { Avatar, avatarForUserId } from "../ui/Bits";
 import useAuth from "../../hooks/useAuth";
 import useProfile from "../../hooks/useProfile";
+import useQuickMatch from "../../hooks/useQuickMatch";
 
 const AUTH_ONLY_ROUTES = new Set(["/lobby", "/challenges"]);
 
@@ -28,6 +29,7 @@ export default function SiteHeader({
   const router = useRouter();
   const { user, logout } = useAuth();
   const { profileUser } = useProfile();
+  const quickMatch = useQuickMatch();
   const avatarSrc = profileUser?.avatarUrl || avatarForUserId(user?.id ?? "guest");
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,6 +61,8 @@ export default function SiteHeader({
         : mainNav;
 
   const handleLogout = async () => {
+    // Leave the queue first, so nobody is paired with a player who is gone.
+    if (quickMatch.phase === "searching") await quickMatch.cancel();
     await logout();
     router.push("/login");
   };
