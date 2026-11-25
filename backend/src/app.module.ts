@@ -40,6 +40,8 @@ import { AppService } from './app.service';
         // Global rate limit: THROTTLE_LIMIT requests per THROTTLE_TTL_MS per
         // client address (see TRUST_PROXY_HOPS behind a reverse proxy).
         THROTTLE_LIMIT: Joi.number().integer().min(1).default(300),
+        // Serve the OpenAPI UI at /api/docs. Defaults to on outside production.
+        ENABLE_SWAGGER: Joi.boolean().optional(),
         THROTTLE_TTL_MS: Joi.number().integer().min(1000).default(60_000),
         // IP geolocation is opt-in: 'none' sends nothing to a third party.
         GEOLOCATION_PROVIDER: Joi.string()

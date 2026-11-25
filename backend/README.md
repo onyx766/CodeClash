@@ -1,7 +1,8 @@
 # CodeClash backend
 
 NestJS 11 + Prisma 5 + PostgreSQL + Redis + Socket.IO. Serves the REST API
-under `/api` (OpenAPI docs at `/api/docs`, health at `/api/health`) and the
+under `/api` (OpenAPI docs at `/api/docs` - on in development, `ENABLE_SWAGGER=true`
+in production - and health at `/api/health`) and the
 real-time gateway on the same port (4000).
 
 - Run everything with Docker: see [docs/deployment.md](../docs/deployment.md).

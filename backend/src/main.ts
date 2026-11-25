@@ -81,15 +81,24 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('CodeClash API')
-    .setDescription('CodeClash backend API')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  // Interactive API docs at /api/docs: on in development, opt-in
+  // (ENABLE_SWAGGER=true) in production so a public deployment does not
+  // publish a map of every endpoint by default.
+  const swaggerFlag = configService.get<string | boolean>('ENABLE_SWAGGER');
+  const swaggerEnabled =
+    swaggerFlag === undefined || swaggerFlag === ''
+      ? !isProduction
+      : swaggerFlag === true || swaggerFlag === 'true';
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('CodeClash API')
+      .setDescription('CodeClash backend API')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(port);
 

@@ -17,7 +17,7 @@ docker compose up --build -d
 
 - Player app: http://localhost:3000
 - Admin console: http://localhost:7662 (`admin@codeclash.local`, password from `.env`)
-- API: http://localhost:4000/api (OpenAPI docs at `/api/docs`)
+- API: http://localhost:4000/api (OpenAPI docs at `/api/docs` when `ENABLE_SWAGGER=true`)
 
 The first start migrates and seeds the database, then validates the starter
 challenges in the sandbox. Matches can start about a minute after the stack is up.

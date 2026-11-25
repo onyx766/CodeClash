@@ -26,7 +26,7 @@ docker compose up --build -d   # first build takes a few minutes
 | Player app    | http://localhost:3000                |
 | Admin console | http://localhost:7662                |
 | API           | http://localhost:4000/api            |
-| API docs      | http://localhost:4000/api/docs       |
+| API docs      | http://localhost:4000/api/docs (set `ENABLE_SWAGGER=true`) |
 | Health        | http://localhost:4000/api/health     |
 
 On first start the API applies database migrations and seeds an empty
@@ -85,6 +85,8 @@ you are most likely to change:
 | `SANDBOX_IMAGE` | `node:22-alpine` | Image that player code runs in. |
 | `AUTO_VALIDATE_CHALLENGES` | `true` | Validate published, never-checked challenges in the sandbox automatically. |
 | `THROTTLE_LIMIT` / `THROTTLE_TTL_MS` | `300` / `60000` | Global rate limit per client address. |
+| `ENABLE_SWAGGER` | `false` in production | Serve the interactive API docs at `/api/docs`. |
+| `GEOLOCATION_PROVIDER` | `none` | Opt-in IP geolocation for profiles (`ip-api`, `ipapi`); enabling it shares players' IP addresses with that provider. |
 | `MATCH_*`, `MATCHMAKING_*` | see `.env.example` | Match length, challenge mix, matchmaking ranges. |
 
 `docker compose up -d` picks up changes to `.env`. `NEXT_PUBLIC_*` values are

@@ -45,7 +45,7 @@ Then:
 npm ci
 npx prisma migrate deploy      # apply migrations
 npm run prisma:seed            # staff accounts, demo players, starter challenges
-npm run start:dev              # http://localhost:4000/api  (docs: /api/docs)
+npm run start:dev              # http://localhost:4000/api  (OpenAPI docs: /api/docs)
 ```
 
 In development the API accepts requests from any origin, and auth cookies are
