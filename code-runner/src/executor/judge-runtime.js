@@ -21,6 +21,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const MAX_MESSAGE_LENGTH = 500;
+const ACTUAL_OUTPUT_PREVIEW_LENGTH = 1000;
 const CHECKER_TIMEOUT_MS = 2000;
 const GENERATOR_TIMEOUT_MS = 5000;
 
@@ -593,7 +594,10 @@ function runSubmission(job) {
   return {
     ok: true,
     // Inputs/expected values are stripped here: a SUBMISSION result travels
-    // back towards a player, and hidden expectations must never leave.
+    // back towards a player, and hidden expectations must never leave. For a
+    // public (sample) test the player already sees the input and expected
+    // output, so their own function's output is returned as a short preview -
+    // the difference is what lets them debug a wrong answer.
     tests: results.map(function (r) {
       return {
         testId: r.testId,
@@ -603,12 +607,25 @@ function runSubmission(job) {
         runtimeMs: r.runtimeMs,
         memoryKb: r.memoryKb,
         message: r.hidden ? null : r.message,
+        actualOutput: r.hidden ? null : previewValue(r.actualOutput),
       };
     }),
     passedTests: passed,
     totalTests: results.length,
     runtimeMs: runtimeMs,
   };
+}
+
+/** JSON preview of a returned value, capped so a huge result stays a hint. */
+function previewValue(value) {
+  if (value === undefined || value === null) return value === null ? 'null' : null;
+  let json;
+  try {
+    json = JSON.stringify(value);
+  } catch (error) {
+    return null;
+  }
+  return json === undefined ? null : truncate(json, ACTUAL_OUTPUT_PREVIEW_LENGTH);
 }
 
 function failureDetail(result) {

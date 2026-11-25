@@ -169,6 +169,9 @@ export function toClientResult(result: RunnerJobResult, testCases: ChallengeTest
       runtimeMs: test.runtimeMs,
       memoryKb: test.memoryKb ?? null,
       message: test.hidden ? null : (test.message ?? null),
+      // The player's own output for a sample test (JSON preview); never for
+      // hidden tests, whatever the runner sent.
+      actualOutput: test.hidden ? null : (test.actualOutput ?? null),
     })),
   };
 }

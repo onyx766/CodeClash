@@ -149,6 +149,28 @@ describe('code runner judge runtime', () => {
     });
   });
 
+  describe('actual output preview', () => {
+    it('returns what the solution produced for a failed public test, never for hidden ones', () => {
+      const result = submission('function solve(nums, target) { return [9, 9]; }', [
+        { id: 'pub', input: { nums: [2, 7], target: 9 }, expectedOutput: [0, 1], hidden: false, order: 0 },
+        { id: 'hid', input: { nums: [3, 3], target: 6 }, expectedOutput: [0, 1], hidden: true, order: 1 },
+      ]);
+
+      const [pub, hid] = result.tests!;
+      expect(pub.status).toBe('WRONG_ANSWER');
+      expect(pub.actualOutput).toBe('[9,9]');
+      expect(hid.status).toBe('WRONG_ANSWER');
+      expect(hid.actualOutput).toBeNull();
+    });
+
+    it('caps very large outputs', () => {
+      const result = submission("function solve() { return 'x'.repeat(5000); }", [
+        { id: 'pub', input: { nums: [], target: 0 }, expectedOutput: 'y', hidden: false, order: 0 },
+      ]);
+      expect(result.tests![0].actualOutput!.length).toBeLessThanOrEqual(1001);
+    });
+  });
+
   describe('function calling convention', () => {
     it('maps a test input object onto positional arguments in contract order', () => {
       const result = submission(TWO_SUM, [
