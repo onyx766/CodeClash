@@ -23,6 +23,10 @@ export function safeNextPath(raw: string | null | undefined, fallback = "/lobby"
   try {
     const url = new URL(raw, window.location.origin);
     if (url.origin !== window.location.origin || AUTH_PAGES.has(url.pathname)) return fallback;
+    // Dot segments can normalise into a protocol-relative path: "/.//evil.example"
+    // and "/a/..//evil.example" parse as this origin with the pathname
+    // "//evil.example", which the router would then open as another site.
+    if (url.pathname.startsWith("//")) return fallback;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return fallback;
