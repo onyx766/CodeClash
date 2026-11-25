@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { usePlayerAppUrl } from "../../hooks/usePlayerAppUrl";
 import { Button, cx } from "../ui/Primitives";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import {
   IconAnalytics,
   IconAward,
@@ -13,6 +14,7 @@ import {
   IconDashboard,
   IconExternal,
   IconFile,
+  IconLock,
   IconLogo,
   IconLogout,
   IconMatches,
@@ -127,6 +129,7 @@ export function AdminShell({
   const { user, logout } = useAdminAuth();
   const playerAppUrl = usePlayerAppUrl();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   return (
     <div className="flex min-h-full">
@@ -294,6 +297,20 @@ export function AdminShell({
                     <Button
                       variant="ghost"
                       size="sm"
+                      role="menuitem"
+                      className="w-full justify-start"
+                      icon={<IconLock size={15} />}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setPasswordOpen(true);
+                      }}
+                    >
+                      Change password
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      role="menuitem"
                       className="w-full justify-start"
                       icon={<IconLogout size={15} />}
                       onClick={async () => {
@@ -313,6 +330,13 @@ export function AdminShell({
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
+
+      {passwordOpen ? (
+        <ChangePasswordDialog
+          email={user?.email}
+          onClose={() => setPasswordOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -178,4 +178,10 @@ export const auth = {
     request("POST", "/auth/login", { email, password }),
   me: () => request("GET", "/auth/me"),
   logout: () => request("POST", "/auth/logout"),
+  /** Signs out the account's other sessions; this one gets fresh cookies. */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ success: true }>("POST", "/auth/change-password", {
+      currentPassword,
+      newPassword,
+    }),
 };
