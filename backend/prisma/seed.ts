@@ -3,10 +3,44 @@ import { Difficulty, JudgeMethod, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const DEFAULT_PASSWORD = 'password123';
+
+const flag = (name: string, fallback: boolean): boolean => {
+  const value = process.env[name];
+  if (value === undefined || value === '') return fallback;
+  return value === 'true' || value === '1';
+};
+
+/**
+ * Seeds the staff accounts, optional demo players and the starter challenge
+ * set. Safe to re-run: users are upserted and never overwritten.
+ *
+ * Environment:
+ * - SEED_ONLY_IF_EMPTY=true    skip entirely when any user exists (what the
+ *                              Docker entrypoint uses on every start)
+ * - SEED_ADMIN_PASSWORD        password for master@ / admin@codeclash.local
+ * - SEED_PLAYER_PASSWORD       password for the demo players
+ * - SEED_DEMO_PLAYERS=false    do not create player1..player5
+ * Both passwords default to "password123" - change them for any deployment
+ * reachable by other people.
+ */
 async function main() {
-  const passwordHash = await argon2.hash('password123', {
-    type: argon2.argon2id,
-  });
+  if (flag('SEED_ONLY_IF_EMPTY', false) && (await prisma.user.count()) > 0) {
+    console.log('Seed skipped: the database already has users.');
+    return;
+  }
+
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || DEFAULT_PASSWORD;
+  const playerPassword = process.env.SEED_PLAYER_PASSWORD || DEFAULT_PASSWORD;
+  if (adminPassword === DEFAULT_PASSWORD) {
+    console.warn(
+      'Seeding staff accounts with the default password - set SEED_ADMIN_PASSWORD for any shared deployment.',
+    );
+  }
+  const hash = (plain: string) => argon2.hash(plain, { type: argon2.argon2id });
+  const passwordHash = await hash(adminPassword);
+  const playerPasswordHash =
+    playerPassword === adminPassword ? passwordHash : await hash(playerPassword);
 
   const master = await prisma.user.upsert({
     where: { email: 'master@codeclash.local' },
@@ -36,14 +70,15 @@ async function main() {
     },
   });
 
-  for (let i = 1; i <= 5; i++) {
+  const demoPlayers = flag('SEED_DEMO_PLAYERS', true) ? 5 : 0;
+  for (let i = 1; i <= demoPlayers; i++) {
     await prisma.user.upsert({
       where: { email: `player${i}@codeclash.local` },
       update: {},
       create: {
         email: `player${i}@codeclash.local`,
         username: `player${i}`,
-        passwordHash,
+        passwordHash: playerPasswordHash,
         role: 'USER',
         profile: { create: {} },
         stats: { create: {} },
@@ -445,6 +480,7 @@ async function main() {
   console.log('Seed finished.', {
     master: master.email,
     admin: admin.email,
+    demoPlayers,
     publishedChallenges: challenges.length,
   });
 }
