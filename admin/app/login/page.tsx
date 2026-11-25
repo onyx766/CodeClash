@@ -7,7 +7,6 @@ import { postLoginPath, useAdminAuth } from "../../hooks/useAdminAuth";
 import { usePlayerAppUrl } from "../../hooks/usePlayerAppUrl";
 import {
   Button,
-  Checkbox,
   Field,
   Notice,
   TextInput,
@@ -33,25 +32,25 @@ const FEATURES = [
   {
     icon: IconUsers,
     title: "User Management",
-    body: "View and manage users, roles, and permissions.",
+    body: "Search accounts, edit profiles, ban, reset passwords and manage roles.",
     accent: "from-blue/25 to-blue/5 text-blue-soft border-blue/25",
   },
   {
-    icon: IconMatches,
-    title: "Match Monitoring",
-    body: "Monitor live matches, player activity, and events.",
-    accent: "from-violet/25 to-violet/5 text-violet-300 border-violet/25",
-  },
-  {
     icon: IconTrophy,
-    title: "Challenge Control",
-    body: "Create, edit, and manage challenges and content.",
+    title: "Challenge Authoring",
+    body: "Write, import or generate challenges and validate them in the sandbox.",
     accent: "from-violet/25 to-blue/5 text-violet-300 border-violet/25",
   },
   {
+    icon: IconMatches,
+    title: "Battle Pool",
+    body: "See which challenges matches can use, and why the others cannot.",
+    accent: "from-violet/25 to-violet/5 text-violet-300 border-violet/25",
+  },
+  {
     icon: IconSystem,
-    title: "Infrastructure Health",
-    body: "Monitor system status and platform performance.",
+    title: "Runner Status",
+    body: "Check the code runner is reachable before validating or publishing.",
     accent: "from-teal/25 to-teal/5 text-teal-300 border-teal/25",
   },
 ] as const;
@@ -64,14 +63,13 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Already signed in with a privileged account? Skip the form.
   useEffect(() => {
     if (!loading && user && isAdmin) {
-      router.replace(postLoginPath() ?? "/challenges/create");
+      router.replace(postLoginPath() ?? "/");
     }
   }, [loading, user, isAdmin, router]);
 
@@ -96,7 +94,7 @@ export default function AdminLoginPage() {
         );
         return;
       }
-      router.replace(postLoginPath() ?? "/challenges/create");
+      router.replace(postLoginPath() ?? "/");
     } catch (caught) {
       setError(
         caught instanceof ApiError
@@ -160,8 +158,8 @@ export default function AdminLoginPage() {
               </span>
             </h1>
             <p className="mt-4 max-w-[560px] text-[15px] leading-relaxed text-muted">
-              A secure administration console for managing challenges, users,
-              matches, and platform infrastructure — all in one place.
+              A secure administration console for the challenges players
+              compete on and the accounts they play with.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -273,18 +271,6 @@ export default function AdminLoginPage() {
                 </div>
               </Field>
 
-              <div className="flex items-center justify-between gap-3">
-                <Checkbox
-                  id="remember-device"
-                  checked={remember}
-                  onChange={setRemember}
-                  label="Remember this device"
-                />
-                <span className="text-[12px] text-dim">
-                  Sessions last 7 days
-                </span>
-              </div>
-
               <Button
                 type="submit"
                 variant="primary"
@@ -305,6 +291,10 @@ export default function AdminLoginPage() {
             <p className="mt-4 text-center text-[12.5px] text-dim">
               Contact the platform owner for an administrator account.
             </p>
+            <p className="mt-1.5 text-center text-[11.5px] leading-relaxed text-faint">
+              The console and the player app share one sign-in per browser. Use
+              a separate browser profile or a private window for admin work.
+            </p>
 
             <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber/25 bg-amber/8 p-3.5">
               <span className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-amber/30 bg-amber/12 text-amber-300">
@@ -315,7 +305,8 @@ export default function AdminLoginPage() {
                   Restricted to authorized administrators only.
                 </p>
                 <p className="mt-0.5 text-[11.5px] leading-4 text-dim">
-                  All access is logged and monitored for security purposes.
+                  The API checks your role on every request, and sign-in
+                  attempts are rate-limited.
                 </p>
               </div>
             </div>

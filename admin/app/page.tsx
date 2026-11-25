@@ -4,26 +4,30 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRequireAdmin } from "../hooks/useAdminAuth";
 import { challengeService } from "../services/challenge.service";
+import { userService } from "../services/user.service";
 import { AdminShell } from "../components/layout/AdminShell";
 import { Badge, Button, Card, cx } from "../components/ui/Primitives";
 import {
   IconArrowRight,
   IconCheckCircle,
-  IconFile,
   IconPlus,
   IconSpinner,
   IconTrophy,
+  IconUsers,
 } from "../components/ui/Icons";
-import type { AdminChallengeSummary } from "../lib/types";
+import { formatNumber } from "../lib/format";
+import type { AdminChallengeSummary, UserStats } from "../lib/types";
 
 /**
- * Console landing page. Only the challenge-authoring feature is built out, so
- * this stays a small overview that points at it rather than pretending to
- * summarise sections that do not exist yet.
+ * Console landing page: a small overview of the two built sections,
+ * challenges and users, rather than a summary of sections that do not exist
+ * yet (those are listed under "Coming soon" in the sidebar).
  */
 export default function AdminHomePage() {
   const { user, loading, isAdmin } = useRequireAdmin();
   const [rows, setRows] = useState<AdminChallengeSummary[] | null>(null);
+  // null while loading, false when the figures could not be read.
+  const [userStats, setUserStats] = useState<UserStats | false | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -31,6 +35,10 @@ export default function AdminHomePage() {
       .list()
       .then((response) => setRows(response.challenges))
       .catch(() => setRows([]));
+    userService
+      .stats()
+      .then((response) => setUserStats(response.stats))
+      .catch(() => setUserStats(false));
   }, [isAdmin]);
 
   if (loading || !isAdmin) {
@@ -63,7 +71,8 @@ export default function AdminHomePage() {
           Welcome back, {user?.username}.
         </h1>
         <p className="mt-1 text-[13.5px] text-muted">
-          Author, validate and publish the problems players compete on.
+          Author, validate and publish the problems players compete on, and
+          manage player accounts.
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -150,11 +159,23 @@ export default function AdminHomePage() {
         </div>
 
         <Card className="mt-4 flex flex-wrap items-center gap-3 p-4">
-          <IconFile size={16} className="text-dim" />
+          <IconUsers size={16} className="text-dim" />
           <p className="text-[12.5px] text-dim">
-            Sections beyond challenge authoring are not built yet — the sidebar
-            links are placeholders.
+            {userStats === null
+              ? "Loading accounts…"
+              : userStats === false
+                ? "Account figures are unavailable right now."
+                : `${formatNumber(userStats.total.value)} accounts: ${formatNumber(
+                    userStats.newUsers.value,
+                  )} joined in the last 30 days, ${formatNumber(userStats.banned.value)} banned.`}
           </p>
+          <Link
+            href="/users"
+            className="ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-blue-soft transition-colors hover:text-fg"
+          >
+            Manage users
+            <IconArrowRight size={14} />
+          </Link>
         </Card>
       </div>
     </AdminShell>

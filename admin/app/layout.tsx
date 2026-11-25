@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CodeClash Admin Console",
   description:
-    "Secure administration console for managing CodeClash challenges, users, matches and platform infrastructure.",
+    "Administration console for managing CodeClash challenges and player accounts.",
   robots: { index: false, follow: false },
 };
 
