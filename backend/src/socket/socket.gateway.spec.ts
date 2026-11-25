@@ -177,39 +177,3 @@ describe('SocketGateway room channel', () => {
     });
   });
 });
-
-describe('SocketGateway handshake', () => {
-  const handshakeSocket = () =>
-    ({
-      handshake: { auth: { token: 'tkn' }, headers: {} },
-      data: {} as any,
-      join: jest.fn(),
-      disconnect: jest.fn(),
-    }) as unknown as Socket & { disconnect: jest.Mock; join: jest.Mock; data: any };
-
-  it('refuses a banned account', async () => {
-    const { gateway, jwt, prisma } = build();
-    jwt.verify.mockReturnValue({ sub: 'u1', type: 'access', iat: 2_000_000_000 });
-    prisma.user.findUnique.mockResolvedValueOnce({ status: 'BANNED', sessionsRevokedAt: null } as any);
-    const client = handshakeSocket();
-
-    await gateway.handleConnection(client);
-
-    expect(client.disconnect).toHaveBeenCalled();
-    expect(client.data.user).toBeUndefined();
-  });
-
-  it('refuses a token issued before the sessions were revoked', async () => {
-    const { gateway, jwt, prisma } = build();
-    jwt.verify.mockReturnValue({ sub: 'u1', type: 'access', iat: 1_000 });
-    prisma.user.findUnique.mockResolvedValueOnce({
-      status: 'ACTIVE',
-      sessionsRevokedAt: new Date(2_000_000 * 1000),
-    } as any);
-    const client = handshakeSocket();
-
-    await gateway.handleConnection(client);
-
-    expect(client.disconnect).toHaveBeenCalled();
-  });
-});

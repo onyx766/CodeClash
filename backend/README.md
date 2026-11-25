@@ -60,6 +60,28 @@ This looks up the account by email and updates its role directly in the database
   (`sessionsRevokedAt`). Bans take effect on the next request, refresh or
   socket connection.
 
+## Real-time (Socket.IO)
+
+The gateway shares the API port. Socket.IO middleware authenticates every
+handshake from the `cc_access_token` cookie (browsers), or `auth.token` / an
+`Authorization: Bearer` header (other clients), with the same checks as HTTP
+requests. A refused handshake never connects: the client gets `connect_error`
+with `err.message` and `err.data.code` set to one of
+
+| Code | Why |
+|---|---|
+| `UNAUTHENTICATED` | no valid access token (missing, expired, not an access token, unknown account), or the account could not be checked |
+| `ACCOUNT_BANNED` | the account is banned |
+| `SESSION_REVOKED` | the token predates a password change or an admin password reset |
+
+socket.io-client does not retry after such a refusal (`socket.active` is
+false): the client renews the session (`POST /api/auth/refresh`) and connects
+again, or ends the session when the renewal is refused. A successful `connect`
+means the socket is already bound to its user and joined to `user:<id>`, so
+`room:join` and `match:join` can be emitted straight from the connect handler.
+Bans, admin password resets and password changes disconnect sockets that are
+already open (`io server disconnect`).
+
 ## Code runner integration
 
 Submissions and challenge validation are sent to the code runner

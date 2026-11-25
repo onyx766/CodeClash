@@ -1,4 +1,12 @@
-import { OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +20,7 @@ import { roleAtLeast } from '../common/constants/role-hierarchy';
 import { touchLastSeen } from '../modules/matchmaking/matchmaking.redis';
 import { loadMatchmakingConfig } from '../modules/matchmaking/matchmaking.constants';
 import { isTokenRevoked } from '../modules/auth/session-revocation.util';
+import type { AccessTokenPayload } from '../modules/auth/auth.types';
 import { withCasualMetadata } from '../modules/rooms/room-metadata.util';
 
 /** Room ready flags live as long as the room's player set (see RoomsService). */
@@ -30,6 +39,35 @@ const ROOM_SNAPSHOT_INCLUDE = {
 const asRoomId = (value: unknown): string | null =>
   typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : null;
 
+/** Why a handshake was refused. */
+export type SocketAuthErrorCode =
+  'UNAUTHENTICATED' | 'ACCOUNT_BANNED' | 'SESSION_REVOKED';
+
+/**
+ * A refused handshake. Socket.IO turns a middleware error into the client's
+ * connect_error with err.message = the code and err.data = { code }, and the
+ * client does not retry it on its own: it renews the session and reconnects
+ * (or ends the session when the renewal is refused).
+ */
+export class SocketAuthError extends Error {
+  readonly data: { code: SocketAuthErrorCode };
+
+  constructor(readonly code: SocketAuthErrorCode) {
+    super(code);
+    this.name = 'SocketAuthError';
+    this.data = { code };
+  }
+}
+
+/** The identity a socket is bound to, at handshake, for its whole life. */
+export interface SocketUser {
+  id: string;
+  role: Role;
+}
+
+/** What the handshake middleware stores on an admitted socket. */
+type SocketData = { user?: SocketUser };
+
 // Reflects any origin in dev (VPN/LAN IPs change often); production is
 // restricted to the configured FRONTEND_URL(s) - mirrors main.ts's HTTP CORS.
 const isProduction = process.env.NODE_ENV === 'production';
@@ -39,7 +77,11 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
   .filter(Boolean);
 
 @WebSocketGateway({ cors: { origin: isProduction ? allowedOrigins : true, credentials: true } })
-export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class SocketGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(SocketGateway.name);
+
   @WebSocketServer()
   server: Server;
 
@@ -92,38 +134,103 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return parseCookies(cookieHeader)[ACCESS_TOKEN_COOKIE] ?? null;
   }
 
-  async handleConnection(client: Socket) {
+  /**
+   * Authenticates every handshake before Socket.IO accepts it, instead of
+   * accepting the connection and dropping it afterwards. A refused client gets
+   * connect_error (see SocketAuthError); an accepted one is already bound to
+   * its user when 'connect' fires, so whatever it emits from its connect
+   * handler is handled as that user. This gateway has no namespace, so Nest
+   * passes the root Server and use() guards the default namespace.
+   */
+  afterInit(server: Server) {
+    server.use((client, next) => {
+      void this.authenticate(client).then(
+        (user) => {
+          (client.data as SocketData).user = user;
+          next();
+          void this.recordConnect(client.id, user.id);
+        },
+        (err: unknown) => next(this.refusal(err)),
+      );
+    });
+  }
+
+  /**
+   * The handshake's identity, with the same standing checks as the HTTP
+   * JwtStrategy: the account must exist and not be banned, and the token must
+   * not predate a revocation of the account's sessions.
+   */
+  private async authenticate(client: Socket): Promise<SocketUser> {
+    const token = this.extractToken(client);
+    if (!token) throw new SocketAuthError('UNAUTHENTICATED');
+    let payload: AccessTokenPayload;
     try {
-      const token = this.extractToken(client);
-      if (!token) return client.disconnect();
-      const payload: any = this.jwt.verify(token, { secret: this.config.get('JWT_ACCESS_SECRET') });
-      if (payload.type !== 'access') return client.disconnect();
-      // Same standing checks as the HTTP JwtStrategy: a banned account or a
-      // token issued before an admin revoked the user's sessions is refused.
-      const account = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        select: { status: true, sessionsRevokedAt: true },
+      payload = this.jwt.verify<AccessTokenPayload>(token, {
+        secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
-      if (
-        !account ||
-        account.status === UserStatus.BANNED ||
-        isTokenRevoked(payload.iat, account.sessionsRevokedAt)
-      ) {
-        return client.disconnect();
-      }
-      client.data.user = { id: payload.sub, role: payload.role };
-      // Lets the server push events to this user regardless of which room
-      // (if any) they're currently viewing - used by matchmaking notifications.
-      client.join(`user:${payload.sub}`);
+    } catch {
+      throw new SocketAuthError('UNAUTHENTICATED');
+    }
+    if (payload.type !== 'access' || typeof payload.sub !== 'string') {
+      throw new SocketAuthError('UNAUTHENTICATED');
+    }
+    const account = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { role: true, status: true, sessionsRevokedAt: true },
+    });
+    if (!account) throw new SocketAuthError('UNAUTHENTICATED');
+    if (account.status === UserStatus.BANNED) {
+      throw new SocketAuthError('ACCOUNT_BANNED');
+    }
+    if (isTokenRevoked(payload.iat, account.sessionsRevokedAt)) {
+      throw new SocketAuthError('SESSION_REVOKED');
+    }
+    // Role from the database, not the token, like the HTTP JwtStrategy.
+    return { id: payload.sub, role: account.role };
+  }
+
+  /** What a failed handshake check is reported as. */
+  private refusal(err: unknown): SocketAuthError {
+    if (err instanceof SocketAuthError) return err;
+    // Not a verdict on the session (the database was unreachable, say):
+    // answered like a missing session, so the client renews and retries.
+    this.logger.error(
+      'Socket handshake check failed',
+      err instanceof Error ? err.stack : err,
+    );
+    return new SocketAuthError('UNAUTHENTICATED');
+  }
+
+  /** Best-effort: Redis trouble must not cost an authenticated player their socket. */
+  private async recordConnect(socketId: string, userId: string) {
+    try {
       const r = this.redis.getClient();
-      await r.set(`player:${payload.sub}:presence`, client.id, 'EX', 60 * 60);
+      await r.set(`player:${userId}:presence`, socketId, 'EX', 60 * 60);
       // Refresh matchmaking queue staleness tracking on (re)connect - a
       // no-op if this user isn't currently searching. See MatchmakingService.
       const staleTimeoutMs = loadMatchmakingConfig(this.config).staleTimeoutMs;
-      await touchLastSeen(r, payload.sub, staleTimeoutMs);
+      await touchLastSeen(r, userId, staleTimeoutMs);
     } catch (err) {
-      client.disconnect();
+      this.logger.warn(
+        `Could not record the connection of ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+  }
+
+  /**
+   * Runs, synchronously, as a socket the handshake middleware admitted
+   * connects - before the client sees 'connect'.
+   */
+  handleConnection(client: Socket) {
+    const { user } = client.data as SocketData;
+    if (!user) {
+      // Unreachable while afterInit's middleware guards the namespace.
+      client.disconnect(true);
+      return;
+    }
+    // Lets the server push events to this user regardless of which room
+    // (if any) they're currently viewing - used by matchmaking notifications.
+    void client.join(`user:${user.id}`);
   }
 
   /**
