@@ -415,7 +415,8 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
           </div>
           {archiveEmptiesPool && pool ? (
             <Notice tone="amber">
-              Only {pool.eligibleCount} challenges are battle-eligible and every match needs{" "}
+              Archiving it leaves {pool.eligibleCount - 1} battle-eligible{" "}
+              {pool.eligibleCount - 1 === 1 ? "challenge" : "challenges"}, and every match needs{" "}
               {pool.challengeCount}. Until another one is published and validated, new matches cannot start.
             </Notice>
           ) : null}
