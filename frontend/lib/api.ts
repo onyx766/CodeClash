@@ -12,39 +12,168 @@ function getApiBase() {
 
 const BASE = getApiBase();
 
-type ApiErrorBody = { success?: false; error?: { code?: string; message?: string } };
+type ApiErrorBody = {
+  success?: false;
+  error?: { code?: string; message?: string; [field: string]: unknown };
+};
 
 export class ApiError extends Error {
   status: number;
   code?: string;
+  /** Extra fields of the error envelope, e.g. MATCH_ALREADY_FOUND's matchId. */
+  details: Record<string, unknown>;
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, details: Record<string, unknown> = {}) {
     super(message);
+    this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
+}
+
+// ---------------------------------------------------------------------------
+// session renewal
+//
+// Access tokens are short-lived (JWT_ACCESS_EXPIRES_IN, 15 minutes by default)
+// and live in an httpOnly cookie. When a request comes back 401, the client
+// renews the session through POST /auth/refresh - which reads the httpOnly
+// refresh cookie - and replays the request once. Concurrent 401s share one
+// refresh. When the refresh is refused, or the account turns out to be
+// banned, the session is over: everything registered with onSessionExpired is
+// told, and the auth provider signs the player out.
+// ---------------------------------------------------------------------------
+
+/**
+ * Endpoints whose 401 means "wrong credentials" or "no session to renew",
+ * never "renew and retry". Refreshing on these would loop or mask the error.
+ */
+const NO_REFRESH = /\/auth\/(?:login|register|refresh|logout)\/?(?:[?#]|$)/;
+
+export type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
+
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
+
+/**
+ * Bumped after every successful refresh. A request remembers the value it was
+ * sent under, so a 401 that arrives after another request already renewed the
+ * session is simply replayed instead of triggering a second refresh.
+ */
+let sessionGeneration = 0;
+
+const expiredListeners = new Set<() => void>();
+const refreshedListeners = new Set<() => void>();
+
+function notify(listeners: Set<() => void>) {
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
+
+/** Called when the session can no longer be renewed. Returns an unsubscribe function. */
+export function onSessionExpired(listener: () => void): () => void {
+  expiredListeners.add(listener);
+  return () => {
+    expiredListeners.delete(listener);
+  };
+}
+
+/**
+ * Called after every successful renewal. The server authenticates sockets
+ * only at the handshake, so the socket is recreated to pick up the new cookie.
+ */
+export function onSessionRefreshed(listener: () => void): () => void {
+  refreshedListeners.add(listener);
+  return () => {
+    refreshedListeners.delete(listener);
+  };
+}
+
+/** Renews the session. Concurrent callers share one POST /auth/refresh. */
+export function refreshSession(): Promise<RefreshOutcome> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      .then((res): RefreshOutcome => {
+        if (res.ok) return 'refreshed';
+        // 401: the refresh cookie is missing, expired or revoked. 403: the
+        // account was banned. Anything else (429, 5xx) is transient and must
+        // not sign anyone out.
+        return res.status === 401 || res.status === 403 ? 'rejected' : 'unavailable';
+      })
+      .catch((): RefreshOutcome => 'unavailable')
+      .then((outcome) => {
+        if (outcome === 'refreshed') {
+          sessionGeneration += 1;
+          notify(refreshedListeners);
+        } else if (outcome === 'rejected') {
+          notify(expiredListeners);
+        }
+        return outcome;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+// ---------------------------------------------------------------------------
+// requests
+// ---------------------------------------------------------------------------
+
+async function send(method: string, url: string, body: unknown): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  try {
+    return await fetch(url, {
+      method,
+      headers,
+      credentials: 'include',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // fetch only rejects when no HTTP response arrived at all: offline, DNS,
+    // a refused connection, or a CORS rejection of this origin.
+    throw new ApiError(0, 'Cannot reach the server. Check your connection and try again.', 'NETWORK_ERROR');
+  }
+}
+
+function errorMessage(res: Response, renewable: boolean, code?: string, message?: string) {
+  if (res.status === 401 && renewable) return 'Your session has expired. Please sign in again.';
+  // The rate limiter answers with its class name ("ThrottlerException: ...").
+  if (res.status === 429 && (!code || code === 'ERROR')) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  return message || `API ${res.status} ${res.statusText}`;
 }
 
 async function request(method: string, path: string, body?: unknown) {
   const url = path.startsWith('http') ? path : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-  const headers: Record<string, string> = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const renewable = !NO_REFRESH.test(url);
+  const generation = sessionGeneration;
+  let res = await send(method, url, body);
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  if (res.status === 401 && renewable) {
+    // The guards reject before any handler runs, so a 401 means nothing was
+    // done and replaying the request once is safe, even for a POST.
+    const outcome = generation !== sessionGeneration ? 'refreshed' : await refreshSession();
+    if (outcome === 'refreshed') res = await send(method, url, body);
+  }
 
   const ct = res.headers.get('content-type') || '';
   const isJson = ct.includes('application/json');
   const payload = isJson ? await res.json().catch(() => null) : await res.text();
 
   if (!res.ok) {
-    const errBody = (isJson ? (payload as ApiErrorBody) : null) ?? {};
-    const message = errBody.error?.message || `API ${res.status} ${res.statusText}`;
-    throw new ApiError(res.status, message, errBody.error?.code);
+    const { code, message, ...details } = (isJson ? (payload as ApiErrorBody | null)?.error : undefined) ?? {};
+    // A ban applies to every request at once; there is nothing left to do
+    // with this session.
+    if (renewable && res.status === 403 && code === 'ACCOUNT_BANNED') notify(expiredListeners);
+    throw new ApiError(res.status, errorMessage(res, renewable, code, message), code, details);
   }
 
   return payload;
@@ -56,11 +185,9 @@ export const auth = {
     request('POST', '/auth/register', { email, username, password }),
   me: () => request('GET', '/auth/me'),
   logout: () => request('POST', '/auth/logout'),
-  refresh: () => request('POST', '/auth/refresh'),
 };
 
 export const rooms = {
-  list: () => request('GET', '/rooms'),
   create: (maxPlayers = 2) => request('POST', '/rooms', { maxPlayers }),
   join: (code: string) => request('POST', '/rooms/join', { code }),
   get: (id: string) => request('GET', `/rooms/${id}`),
@@ -101,5 +228,3 @@ export const profile = {
   me: () => request('GET', '/users/me/profile'),
   update: (payload: Record<string, unknown>) => request('PATCH', '/users/me/profile', payload),
 };
-
-export default { request };

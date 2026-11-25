@@ -1,7 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { auth } from "../lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { auth, onSessionExpired } from "../lib/api";
+import { authHref, currentPathWithQuery, isAuthPage } from "../lib/navigation";
 
 export type AuthUser = {
   id: string;
@@ -19,6 +21,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   activeRoom: ActiveRoom | null;
   loading: boolean;
+  /** The last session ended because it could not be renewed (not a logout). */
+  sessionExpired: boolean;
   login: (email: string, password: string) => Promise<{ user: AuthUser; activeRoom: ActiveRoom | null }>;
   register: (email: string, username: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
@@ -28,9 +32,17 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  // Read by the session-expiry listener, which outlives any one render.
+  const userRef = useRef<AuthUser | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,11 +68,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // The API client could not renew the session (refresh refused or account
+  // banned): sign out here and send the player to the login page, which
+  // brings them back to where they were.
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        // A guest's failed /auth/me ends nothing.
+        if (!userRef.current) return;
+        userRef.current = null;
+        setUser(null);
+        setActiveRoom(null);
+        setSessionExpired(true);
+        if (!isAuthPage(window.location.pathname)) {
+          router.replace(authHref("/login", currentPathWithQuery(), { expired: true }));
+        }
+      }),
+    [router],
+  );
+
   const login = useCallback(async (email: string, password: string) => {
     const res = await auth.login(email, password);
     const nextActiveRoom = (res.activeRoom ?? null) as ActiveRoom | null;
     setUser(res.user);
     setActiveRoom(nextActiveRoom);
+    setSessionExpired(false);
     return { user: res.user as AuthUser, activeRoom: nextActiveRoom };
   }, []);
 
@@ -68,16 +100,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await auth.register(email, username, password);
     setUser(res.user);
     setActiveRoom(null);
+    setSessionExpired(false);
     return res.user as AuthUser;
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await auth.logout();
-    } finally {
-      setUser(null);
-      setActiveRoom(null);
+    } catch {
+      // The cookies may already be gone - sign out locally regardless.
     }
+    setUser(null);
+    setActiveRoom(null);
   }, []);
 
   const clearActiveRoom = useCallback(() => {
@@ -85,8 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, activeRoom, loading, login, register, logout, clearActiveRoom }),
-    [user, activeRoom, loading, login, register, logout, clearActiveRoom],
+    () => ({ user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom }),
+    [user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
