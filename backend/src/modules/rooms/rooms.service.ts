@@ -2,6 +2,8 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
+import { SocketEvents } from '../../socket/socket.events';
+import { dequeue, getQueueEntry } from '../matchmaking/matchmaking.redis';
 import {
   MatchAlreadyStartedException,
   RoomAlreadyHostedException,
@@ -44,6 +46,18 @@ export class RoomsService {
     private redis: RedisService,
     private socket: SocketGateway,
   ) {}
+
+  /**
+   * Taking a seat in a private room ends any Quick Match search, so the
+   * player cannot be paired into a second match while committed to a room.
+   * The lobby (if still open) is told the search stopped.
+   */
+  private async leaveQuickMatchQueue(userId: string) {
+    const client = this.redis.getClient();
+    if (!(await getQueueEntry(client, userId))) return;
+    await dequeue(client, userId);
+    this.socket.emitToUser(userId, SocketEvents.MATCHMAKING_CANCELLED, { reason: 'JOINED_ROOM' });
+  }
 
   /** Best-effort live update for the room page; never fails the request. */
   private async announceRoom(roomId: string) {
@@ -93,6 +107,7 @@ export class RoomsService {
       await this.deleteRoomCascade(existing.id);
     }
 
+    await this.leaveQuickMatchQueue(hostId);
     const code = await this.ensureUniqueCode();
     const expiresAt = new Date(Date.now() + ROOM_TTL_MS);
     const room = await this.prisma.room.create({ data: { hostId, code, maxPlayers, expiresAt } });
@@ -139,6 +154,7 @@ export class RoomsService {
     const client = this.redis.getClient();
     await client.sadd(`room:${room.id}:players`, userId);
     await client.expire(`room:${room.id}:players`, 60 * 60 * 24);
+    await this.leaveQuickMatchQueue(userId);
     // The host's room page learns about the new player right away.
     await this.announceRoom(room.id);
     return { room: withCasualMetadata(room), player: rp };

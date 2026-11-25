@@ -14,15 +14,33 @@ type MockPrisma = {
 describe('RoomsService', () => {
   let service: RoomsService;
   let prisma: MockPrisma;
-  let redisClient: { sadd: jest.Mock; expire: jest.Mock; srem: jest.Mock; del: jest.Mock };
-  let socket: { broadcastRoom: jest.Mock };
+  let redisClient: {
+    sadd: jest.Mock;
+    expire: jest.Mock;
+    srem: jest.Mock;
+    del: jest.Mock;
+    zscore: jest.Mock;
+    multi: jest.Mock;
+  };
+  let queued: { zrem: jest.Mock; del: jest.Mock; exec: jest.Mock };
+  let socket: { broadcastRoom: jest.Mock; emitToUser: jest.Mock };
 
   const HOST_ID = 'host-1';
   const ROOM = { id: 'room-1', code: 'ABC123', hostId: HOST_ID, maxPlayers: 2 };
 
   beforeEach(async () => {
-    redisClient = { sadd: jest.fn(), expire: jest.fn(), srem: jest.fn(), del: jest.fn() };
-    socket = { broadcastRoom: jest.fn().mockResolvedValue(undefined) };
+    queued = { zrem: jest.fn(), del: jest.fn(), exec: jest.fn().mockResolvedValue([]) };
+    queued.zrem.mockReturnValue(queued);
+    queued.del.mockReturnValue(queued);
+    redisClient = {
+      sadd: jest.fn(),
+      expire: jest.fn(),
+      srem: jest.fn(),
+      del: jest.fn(),
+      zscore: jest.fn().mockResolvedValue(null), // not searching by default
+      multi: jest.fn(() => queued),
+    };
+    socket = { broadcastRoom: jest.fn().mockResolvedValue(undefined), emitToUser: jest.fn() };
 
     prisma = {
       room: {
@@ -173,6 +191,32 @@ describe('RoomsService', () => {
       socket.broadcastRoom.mockRejectedValue(new Error('socket down'));
 
       await expect(service.leaveRoom('guest-1', ROOM.id)).resolves.toEqual({ success: true });
+    });
+  });
+
+  describe('Quick Match interplay', () => {
+    it('ends a running Quick Match search when the player creates a room', async () => {
+      redisClient.zscore.mockResolvedValue('1200'); // rating and joinedAt present
+      await service.createRoom(HOST_ID);
+      expect(queued.exec).toHaveBeenCalled();
+      expect(socket.emitToUser).toHaveBeenCalledWith(HOST_ID, 'matchmaking:cancelled', { reason: 'JOINED_ROOM' });
+    });
+
+    it('leaves players who are not searching alone', async () => {
+      await service.createRoom(HOST_ID);
+      expect(redisClient.multi).not.toHaveBeenCalled();
+      expect(socket.emitToUser).not.toHaveBeenCalled();
+    });
+
+    it('ends the search when the player joins someone else\'s room', async () => {
+      prisma.room.findUnique.mockResolvedValue({ ...ROOM, expiresAt: null, match: null });
+      prisma.roomPlayer.count.mockResolvedValue(1);
+      prisma.roomPlayer.findFirst.mockResolvedValue(null);
+      redisClient.zscore.mockResolvedValue('1200');
+
+      await service.joinRoomById('guest-1', ROOM.id);
+
+      expect(socket.emitToUser).toHaveBeenCalledWith('guest-1', 'matchmaking:cancelled', { reason: 'JOINED_ROOM' });
     });
   });
 });
