@@ -5,6 +5,12 @@ import { Button, Notice } from "./Primitives";
 import { IconAlert } from "./Icons";
 
 /**
+ * onClose for a dialog whose request is in flight: Escape and the backdrop do
+ * nothing until it settles.
+ */
+export const ignoreClose = () => {};
+
+/**
  * Centered dialog over a dimmed backdrop. Escape or a click outside closes it.
  */
 export function Modal({
@@ -59,6 +65,10 @@ export function Modal({
  * Asks before an action that cannot be taken back. The caller owns the busy
  * and error state, so a refusal from the server is shown in the dialog,
  * where the admin is looking, instead of somewhere off-screen.
+ *
+ * While the action runs the dialog cannot be dismissed: the request has been
+ * sent and will complete either way, so a Cancel then would only hide its
+ * outcome.
  */
 export function ConfirmDialog({
   title,
@@ -87,7 +97,12 @@ export function ConfirmDialog({
   children?: ReactNode;
 }) {
   return (
-    <Modal title={title} description={description} icon={icon} onClose={onCancel}>
+    <Modal
+      title={title}
+      description={description}
+      icon={icon}
+      onClose={busy ? ignoreClose : onCancel}
+    >
       <div className="space-y-4 p-5">
         {error ? (
           <Notice tone="rose">
@@ -101,7 +116,9 @@ export function ConfirmDialog({
         {children}
 
         <div className="flex justify-end gap-2">
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
           <Button
             variant={danger ? "danger" : "primary"}
             loading={busy}

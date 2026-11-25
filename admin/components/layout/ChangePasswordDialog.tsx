@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { ApiError, auth } from "../../lib/api";
 import { Button, Field, Notice, TextInput } from "../ui/Primitives";
-import { Modal } from "../ui/Modal";
+import { Modal, ignoreClose } from "../ui/Modal";
 import { IconAlert, IconCheckCircle, IconLock } from "../ui/Icons";
 
 const MIN_LENGTH = 8;
@@ -81,7 +81,9 @@ export function ChangePasswordDialog({
           <IconLock size={17} />
         </span>
       }
-      onClose={onClose}
+      // Once the request is sent the password may already have changed:
+      // stay open until the dialog can say whether it did.
+      onClose={submitting ? ignoreClose : onClose}
     >
       {done ? (
         <div className="space-y-4 p-5">
@@ -177,7 +179,7 @@ export function ChangePasswordDialog({
           </Field>
 
           <div className="flex justify-end gap-2">
-            <Button type="button" onClick={onClose}>
+            <Button type="button" disabled={submitting} onClick={onClose}>
               Cancel
             </Button>
             <Button
