@@ -1,5 +1,5 @@
 import * as argon2 from 'argon2';
-import { Difficulty, JudgeMethod, PrismaClient } from '@prisma/client';
+import { Difficulty, JudgeMethod, Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -453,7 +453,17 @@ async function main() {
       where: { slug: c.slug },
       // `set: []` first so a tag removed from this file is actually dropped.
       // Only valid on update - a create has nothing to detach.
-      update: { ...data, tags: { set: [], connect: connectTags } },
+      // Re-seeding rewrites the judging fields and test cases below, so any
+      // earlier validation no longer describes them: drop it, and the API's
+      // startup auto-validation re-checks the challenge in the sandbox.
+      update: {
+        ...data,
+        validationStatus: 'NOT_CHECKED',
+        validatedAt: null,
+        validationChecks: Prisma.DbNull,
+        validationFingerprint: null,
+        tags: { set: [], connect: connectTags },
+      },
       create: { ...data, slug: c.slug, tags: { connect: connectTags } },
     });
 
