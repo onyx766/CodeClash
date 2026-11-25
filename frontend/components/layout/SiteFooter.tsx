@@ -1,13 +1,5 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import Logo from "../ui/Logo";
-import {
-  DiscordIcon,
-  GithubIcon,
-  LinkedinIcon,
-  XIcon,
-  YoutubeIcon,
-} from "../ui/BrandIcons";
 
 const columns = [
   {
@@ -28,46 +20,17 @@ const columns = [
       { label: "Announcements", href: "/community" },
     ],
   },
-  {
-    title: "Company",
-    links: [
-      { label: "About Us", href: "/how-it-works" },
-      { label: "Careers", href: "/how-it-works" },
-      { label: "Contact", href: "/how-it-works" },
-      { label: "Privacy Policy", href: "/how-it-works" },
-    ],
-  },
-];
-
-const socials = [
-  { icon: DiscordIcon, label: "Discord" },
-  { icon: XIcon, label: "X" },
-  { icon: GithubIcon, label: "GitHub" },
-  { icon: YoutubeIcon, label: "YouTube" },
-  { icon: LinkedinIcon, label: "LinkedIn" },
 ];
 
 export default function SiteFooter() {
   return (
     <footer className="border-t border-line bg-surface">
-      <div className="cc-container grid gap-10 py-14 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1.4fr] lg:gap-8">
+      <div className="cc-container grid gap-10 py-14 md:grid-cols-3 lg:grid-cols-[1.4fr_1fr_1fr] lg:gap-8">
         <div>
           <Logo />
           <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-dim">
             The ultimate platform for real-time coding battles and developer growth.
           </p>
-          <div className="mt-5 flex items-center gap-2.5">
-            {socials.map(({ icon: Icon, label }) => (
-              <button
-                key={label}
-                type="button"
-                aria-label={label}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel text-dim transition-colors hover:border-blue/40 hover:text-blue-300"
-              >
-                <Icon size={15} />
-              </button>
-            ))}
-          </div>
         </div>
 
         {columns.map((col) => (
@@ -87,44 +50,11 @@ export default function SiteFooter() {
             </ul>
           </div>
         ))}
-
-        <div>
-          <h3 className="text-[13px] font-bold text-fg">Stay Updated</h3>
-          <p className="mt-4 text-[13px] leading-relaxed text-dim">
-            Get the latest news, challenges and updates.
-          </p>
-          <form className="mt-4 flex items-center gap-2">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              aria-label="Email address"
-              className="field !py-2.5 !text-[13px]"
-            />
-            <button
-              type="button"
-              aria-label="Subscribe"
-              className="btn btn-blue !h-[42px] !w-[42px] !p-0"
-            >
-              <ArrowRight size={17} />
-            </button>
-          </form>
-        </div>
       </div>
 
       <div className="border-t border-line/70">
         <div className="cc-container flex flex-col items-center justify-between gap-3 py-5 text-[12.5px] text-dim sm:flex-row">
           <span>© 2024 CodeClash. All rights reserved.</span>
-          <div className="flex items-center gap-5">
-            <Link href="/how-it-works" className="transition-colors hover:text-fg">
-              Terms of Service
-            </Link>
-            <Link href="/how-it-works" className="transition-colors hover:text-fg">
-              Privacy Policy
-            </Link>
-            <Link href="/how-it-works" className="transition-colors hover:text-fg">
-              Contact Us
-            </Link>
-          </div>
         </div>
       </div>
     </footer>

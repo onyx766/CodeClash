@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import AuthLayout from "../../components/auth/AuthLayout";
-import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
+import { AuthCardHeader } from "../../components/auth/AuthCard";
 import useAuth from "../../hooks/useAuth";
 import useSearchParam from "../../hooks/useSearchParam";
 import { authErrorMessage } from "../../lib/authErrors";
@@ -101,12 +101,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 text-[12px]">
-            <span className="text-dim">Keep me signed in</span>
-            <Link href="/forgot-password" className="font-medium text-blue-400 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+          <p className="text-[12px] text-dim">Forgot your password? An administrator can reset it for you.</p>
 
           {error && (
             <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">
@@ -118,8 +113,6 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign In"} <ArrowRight size={15} />
           </button>
         </form>
-
-        <SocialAuth />
 
         <p className="mt-5 text-center text-[12.5px] text-dim">
           New to CodeClash? <Link href={authHref("/register", next)} className="font-semibold text-blue-400 hover:underline">Create an account</Link>

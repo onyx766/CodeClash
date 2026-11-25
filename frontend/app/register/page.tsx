@@ -7,7 +7,7 @@ import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import useAuth from "../../hooks/useAuth";
 import useSearchParam from "../../hooks/useSearchParam";
 import AuthLayout from "../../components/auth/AuthLayout";
-import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
+import { AuthCardHeader } from "../../components/auth/AuthCard";
 import { authErrorMessage } from "../../lib/authErrors";
 import { authHref, safeNextPath } from "../../lib/navigation";
 
@@ -167,8 +167,6 @@ export default function RegisterPage() {
             {busy ? "Creating account…" : "Create Account"} <ArrowRight size={15} />
           </button>
         </form>
-
-        <SocialAuth />
 
         <p className="mt-5 text-center text-[12.5px] text-dim">
           Already have an account? <Link href={authHref("/login", next)} className="font-semibold text-blue-400 hover:underline">Log in</Link>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   BarChart3,
   ChevronRight,
@@ -287,9 +288,9 @@ export default function HowItWorksPage() {
                   <p className="text-[11px] text-dim">Live competitive mode</p>
                 </div>
               </div>
-              <button type="button" className="btn btn-blue mt-4 w-full !py-2.5 !text-[12px]">
-                Join Queue
-              </button>
+              <Link href="/lobby" className="btn btn-blue mt-4 w-full !py-2.5 !text-[12px]">
+                Find a Match
+              </Link>
             </div>
           }
         />

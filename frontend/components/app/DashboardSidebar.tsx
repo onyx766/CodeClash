@@ -1,18 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Flame, Gem, History, LayoutGrid, Settings, Swords, Trophy, Users } from "lucide-react";
+import { BarChart3, ChevronRight, Flame, Gem, History, LayoutGrid, Swords, User } from "lucide-react";
 import { SideNav, type SideItem } from "../layout/AppLayout";
 import useProfile from "../../hooks/useProfile";
 import { formatWinRate } from "../../hooks/useLeaderboard";
 
 const items: SideItem[] = [
   { href: "/lobby", label: "Lobby", icon: LayoutGrid },
-  { href: "/rooms", label: "Rooms", icon: Swords },
-  { href: "/match-history", label: "Match History", icon: History },
-  { href: "/friends", label: "Friends", icon: Users },
-  { href: "/tournaments", label: "Tournaments", icon: Trophy, badge: "NEW" },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/challenges", label: "Challenges", icon: Swords },
+  { href: "/leaderboard", label: "Leaderboard", icon: BarChart3 },
+  { href: "/profile#match-history", label: "Match History", icon: History },
+  { href: "/profile", label: "Profile", icon: User },
 ];
 
 export default function DashboardSidebar() {

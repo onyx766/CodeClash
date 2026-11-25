@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { BarChart3, Flame, Gem, LayoutGrid, Swords, Trophy, User, Users } from "lucide-react";
 import { SideNav, type SideItem } from "../layout/AppLayout";
 import useAuth from "../../hooks/useAuth";
@@ -61,23 +60,6 @@ export function YourStatsCard() {
   );
 }
 
-export function TournamentsCard() {
-  return (
-    <div className="card p-4">
-      <div className="flex items-start justify-between gap-2">
-        <h2 className="text-[13.5px] font-bold">Join Tournaments</h2>
-        <Trophy size={17} className="text-violet-400" />
-      </div>
-      <p className="mt-2 text-[11.5px] leading-relaxed text-dim">
-        Compete, win prizes and climb the ranks!
-      </p>
-      <Link href="/tournaments" className="btn btn-violet mt-4 w-full !py-2 !text-[12px]">
-        View Tournaments
-      </Link>
-    </div>
-  );
-}
-
 export default function MainSidebar({ footer }: { footer?: React.ReactNode }) {
   const { user } = useAuth();
   return (
@@ -89,7 +71,7 @@ export default function MainSidebar({ footer }: { footer?: React.ReactNode }) {
           <YourStatsCard />
         </div>
       )}
-      {footer ?? <TournamentsCard />}
+      {footer}
     </>
   );
 }

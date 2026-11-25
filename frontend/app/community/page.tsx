@@ -24,7 +24,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import AppLayout, { SideNav, type SideItem } from "../../components/layout/AppLayout";
-import { TournamentsCard } from "../../components/app/MainSidebar";
 import { Avatar, Panel, Tag } from "../../components/ui/Bits";
 import RankBadge from "../../components/ui/RankBadge";
 import { onlineFriends, posts, topContributors, upcomingEvents } from "../../lib/demo";
@@ -83,7 +82,6 @@ export default function CommunityPage() {
           <div className="border-t border-line pt-4">
             <SideNav items={myStuffNav} heading="Your Stuff" />
           </div>
-          <TournamentsCard />
         </>
       }
       rail={
