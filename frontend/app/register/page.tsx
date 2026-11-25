@@ -5,13 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import useAuth from "../../hooks/useAuth";
+import useSearchParam from "../../hooks/useSearchParam";
 import AuthLayout from "../../components/auth/AuthLayout";
 import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
-import { ApiError } from "../../lib/api";
+import { authErrorMessage } from "../../lib/authErrors";
+import { authHref, safeNextPath } from "../../lib/navigation";
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
+  // e.g. the invite link (/lobby?code=...) that sent a new player here.
+  const next = safeNextPath(useSearchParam("next"), "");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,13 +40,9 @@ export default function RegisterPage() {
     setBusy(true);
     try {
       await register(email, username, password);
-      router.push("/lobby");
+      router.push(next || "/lobby");
     } catch (err) {
-      if (err instanceof ApiError && err.status < 500) {
-        setError(err.message);
-      } else {
-        setError("Registration failed. Please try again.");
-      }
+      setError(authErrorMessage(err, "Registration failed. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -171,7 +171,7 @@ export default function RegisterPage() {
         <SocialAuth />
 
         <p className="mt-5 text-center text-[12.5px] text-dim">
-          Already have an account? <Link href="/login" className="font-semibold text-blue-400 hover:underline">Log in</Link>
+          Already have an account? <Link href={authHref("/login", next)} className="font-semibold text-blue-400 hover:underline">Log in</Link>
         </p>
       </div>
     </AuthLayout>

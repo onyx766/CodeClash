@@ -7,16 +7,16 @@ import { useState } from "react";
 import AuthLayout from "../../components/auth/AuthLayout";
 import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
 import useAuth from "../../hooks/useAuth";
-
-function getNextPath(): string {
-  if (typeof window === "undefined") return "/lobby";
-  const next = new URLSearchParams(window.location.search).get("next");
-  return next && next.startsWith("/") ? next : "/lobby";
-}
+import useSearchParam from "../../hooks/useSearchParam";
+import { authErrorMessage } from "../../lib/authErrors";
+import { authHref, safeNextPath } from "../../lib/navigation";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  // Only ever a path on this site: never an open redirect.
+  const next = safeNextPath(useSearchParam("next"), "");
+  const expired = useSearchParam("expired") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,9 +30,9 @@ export default function LoginPage() {
 
     try {
       const { activeRoom } = await login(email, password);
-      router.push(activeRoom ? `/rooms/${activeRoom.id}` : getNextPath());
-    } catch {
-      setError("Login failed. Check your email and password.");
+      router.push(activeRoom ? `/rooms/${activeRoom.id}` : next || "/lobby");
+    } catch (err) {
+      setError(authErrorMessage(err, "Invalid email or password."));
     } finally {
       setBusy(false);
     }
@@ -46,6 +46,15 @@ export default function LoginPage() {
     >
       <div className="card p-6 sm:p-7">
         <AuthCardHeader title="Sign in" subtitle="Enter your details to access your account." />
+
+        {expired && !error && (
+          <p
+            role="status"
+            className="mt-5 rounded-lg border border-blue/30 bg-blue/10 px-3 py-2 text-[12.5px] text-blue-200"
+          >
+            Your session has expired. Please sign in again.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
           <div>
@@ -113,7 +122,7 @@ export default function LoginPage() {
         <SocialAuth />
 
         <p className="mt-5 text-center text-[12.5px] text-dim">
-          New to CodeClash? <Link href="/register" className="font-semibold text-blue-400 hover:underline">Create an account</Link>
+          New to CodeClash? <Link href={authHref("/register", next)} className="font-semibold text-blue-400 hover:underline">Create an account</Link>
         </p>
       </div>
     </AuthLayout>
