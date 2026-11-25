@@ -17,9 +17,6 @@ function parseDurationMs(value: string): number {
   return amount * unitMs;
 }
 
-// The access token itself carries no `exp` claim (see AuthService.generateTokens),
-// so its cookie shouldn't clip it short - keep it around for a practical "forever".
-const ACCESS_COOKIE_MAX_AGE_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether auth cookies carry the Secure attribute. COOKIE_SECURE wins when
@@ -44,13 +41,17 @@ export function setAuthCookies(
   const refreshMaxAge = parseDurationMs(
     config.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
   );
+  // The cookie lives exactly as long as the token inside it.
+  const accessMaxAge = parseDurationMs(
+    config.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m',
+  );
 
   res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
     httpOnly: true,
     secure,
     sameSite: 'lax',
     path: ACCESS_TOKEN_COOKIE_PATH,
-    maxAge: ACCESS_COOKIE_MAX_AGE_MS,
+    maxAge: accessMaxAge,
   });
 
   res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {

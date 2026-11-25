@@ -201,9 +201,13 @@ export class AuthService {
       type: 'refresh',
     };
 
-    // No expiresIn - the access token never expires (no `exp` claim).
+    // Short-lived: clients renew it through POST /auth/refresh. A stolen
+    // access token is only useful until it expires, and logout plus
+    // session revocation become effective within that window.
     const accessToken = this.jwtService.sign(accessPayload, {
       secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: (this.config.get<string>('JWT_ACCESS_EXPIRES_IN') ||
+        '15m') as StringValue,
     });
     const refreshToken = this.jwtService.sign(refreshPayload, {
       secret: this.config.get<string>('JWT_REFRESH_SECRET'),

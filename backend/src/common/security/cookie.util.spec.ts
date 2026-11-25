@@ -43,4 +43,16 @@ describe('cookie.util', () => {
       );
     }
   });
+
+  it('gives each cookie the lifetime of the token it holds', () => {
+    const res = { cookie: jest.fn(), clearCookie: jest.fn() } as unknown as Response;
+    setAuthCookies(
+      res,
+      { accessToken: 'a', refreshToken: 'r' },
+      config({ JWT_ACCESS_EXPIRES_IN: '15m', JWT_REFRESH_EXPIRES_IN: '7d' }),
+    );
+    const [access, refresh] = (res.cookie as jest.Mock).mock.calls;
+    expect(access[2].maxAge).toBe(15 * 60 * 1000);
+    expect(refresh[2].maxAge).toBe(7 * 24 * 60 * 60 * 1000);
+  });
 });

@@ -193,6 +193,27 @@ describe('AuthService', () => {
     });
   });
 
+  describe('token lifetimes', () => {
+    const claims = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8')) as {
+        iat: number;
+        exp?: number;
+      };
+
+    it('issues access tokens that expire after JWT_ACCESS_EXPIRES_IN', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      const access = claims(tokens.accessToken);
+      expect(access.exp).toBeDefined();
+      expect(access.exp! - access.iat).toBe(15 * 60);
+      const refresh = claims(tokens.refreshToken);
+      expect(refresh.exp! - refresh.iat).toBe(7 * 24 * 60 * 60);
+    });
+  });
+
   describe('refresh', () => {
     it('rejects an invalid or garbage refresh token', async () => {
       await expect(service.refresh('not-a-real-token')).rejects.toThrow();
