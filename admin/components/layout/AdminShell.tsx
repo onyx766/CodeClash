@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { usePlayerAppUrl } from "../../hooks/usePlayerAppUrl";
 import { Button, cx } from "../ui/Primitives";
 import {
   IconAnalytics,
@@ -38,9 +39,6 @@ const NAV = [
   { href: "/reports", label: "Reports", icon: IconReport },
   { href: "/settings", label: "Settings", icon: IconSettings },
 ] as const;
-
-const PLAYER_APP_URL =
-  process.env.NEXT_PUBLIC_PLAYER_APP_URL || "http://localhost:3000";
 
 function initials(name: string) {
   return name.slice(0, 2).toUpperCase();
@@ -120,6 +118,7 @@ export function AdminShell({
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAdminAuth();
+  const playerAppUrl = usePlayerAppUrl();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -212,7 +211,7 @@ export function AdminShell({
 
           <div className="ml-auto flex items-center gap-2">
             <a
-              href={PLAYER_APP_URL}
+              href={playerAppUrl}
               target="_blank"
               rel="noreferrer"
               className="hidden items-center gap-2 rounded-[9px] border border-line px-3 py-1.5 text-[12px] font-semibold text-muted transition-colors hover:border-panel-3 hover:text-fg sm:inline-flex"

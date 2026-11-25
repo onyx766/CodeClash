@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError } from "../../lib/api";
 import { postLoginPath, useAdminAuth } from "../../hooks/useAdminAuth";
+import { usePlayerAppUrl } from "../../hooks/usePlayerAppUrl";
 import {
   Button,
   Checkbox,
@@ -55,12 +56,10 @@ const FEATURES = [
   },
 ] as const;
 
-const PLAYER_APP_URL =
-  process.env.NEXT_PUBLIC_PLAYER_APP_URL || "http://localhost:3000";
-
 export default function AdminLoginPage() {
   const router = useRouter();
   const { login, user, isAdmin, loading, sessionExpired } = useAdminAuth();
+  const playerAppUrl = usePlayerAppUrl();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -139,7 +138,7 @@ export default function AdminLoginPage() {
             </span>
           </div>
           <a
-            href={PLAYER_APP_URL}
+            href={playerAppUrl}
             className="inline-flex items-center gap-2 rounded-[10px] border border-line px-3 py-2 text-[12px] font-semibold text-muted transition-colors hover:border-panel-3 hover:text-fg"
           >
             <IconExternal size={14} />
