@@ -10,7 +10,8 @@ import {
   InvalidCredentialsException,
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
-import { hashPassword } from '../../common/security/password.util';
+import { hashPassword, verifyPassword } from '../../common/security/password.util';
+import { isTokenRevoked } from './session-revocation.util';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -22,6 +23,8 @@ describe('AuthService', () => {
       | 'create'
       | 'findById'
       | 'updateLocation'
+      | 'findPasswordHash'
+      | 'setPassword'
     >
   >;
   let geolocationService: jest.Mocked<Pick<GeolocationService, 'getLocationFromIp'>>;
@@ -42,6 +45,8 @@ describe('AuthService', () => {
       create: jest.fn(),
       findById: jest.fn(),
       updateLocation: jest.fn(),
+      findPasswordHash: jest.fn(),
+      setPassword: jest.fn(),
     };
     geolocationService = {
       getLocationFromIp: jest.fn(),
@@ -190,6 +195,37 @@ describe('AuthService', () => {
           'Invalid email or password',
         );
       }
+    });
+  });
+
+  describe('changePassword', () => {
+    it('verifies the current password, stores the new hash, revokes other sessions and re-issues tokens', async () => {
+      usersService.findById.mockResolvedValue(baseUser as never);
+      usersService.findPasswordHash.mockResolvedValue(await hashPassword('oldPassword123'));
+
+      const before = Math.floor(Date.now() / 1000);
+      const { tokens, user } = await service.changePassword('user-1', 'oldPassword123', 'newPassword456');
+
+      expect(user.id).toBe('user-1');
+      const [id, newHash, revokedAt] = usersService.setPassword.mock.calls[0];
+      expect(id).toBe('user-1');
+      expect(newHash).not.toBe('newPassword456');
+      expect(await verifyPassword(newHash, 'newPassword456')).toBe(true);
+      expect(revokedAt).toBeInstanceOf(Date);
+      // The re-issued token must survive the revocation it just triggered.
+      const iat = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1], 'base64url').toString()).iat;
+      expect(iat).toBeGreaterThanOrEqual(before);
+      expect(isTokenRevoked(iat, revokedAt)).toBe(false);
+    });
+
+    it('refuses a wrong current password without changing anything', async () => {
+      usersService.findById.mockResolvedValue(baseUser as never);
+      usersService.findPasswordHash.mockResolvedValue(await hashPassword('oldPassword123'));
+
+      await expect(
+        service.changePassword('user-1', 'notMyPassword', 'newPassword456'),
+      ).rejects.toMatchObject({ code: 'INVALID_CURRENT_PASSWORD', status: 400 });
+      expect(usersService.setPassword).not.toHaveBeenCalled();
     });
   });
 

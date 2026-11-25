@@ -16,6 +16,7 @@ import { AuthService } from './auth.service';
 import { RoomsService } from '../rooms/rooms.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import {
   setAuthCookies,
@@ -95,6 +96,29 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   logout(@Res({ passthrough: true }) res: Response) {
     clearAuthCookies(res, this.config);
+    return { success: true };
+  }
+
+  /**
+   * Changes the caller's password, signs out their other sessions and
+   * re-issues this session's cookies.
+   */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Req() req: Request,
+    @Body() body: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const user = req.user as AuthenticatedUser;
+    const { tokens } = await this.authService.changePassword(
+      user.id,
+      body.currentPassword,
+      body.newPassword,
+    );
+    setAuthCookies(res, tokens, this.config);
     return { success: true };
   }
 

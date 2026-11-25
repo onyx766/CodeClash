@@ -38,6 +38,26 @@ export class UsersService {
     });
   }
 
+  /** The stored hash, for verifying a password; null when the user is gone. */
+  async findPasswordHash(id: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { passwordHash: true },
+    });
+    return user?.passwordHash ?? null;
+  }
+
+  /**
+   * Replaces the password and revokes every session issued before
+   * `revokedAt` (JwtStrategy and the refresh path refuse older tokens).
+   */
+  async setPassword(id: string, passwordHash: string, revokedAt: Date): Promise<void> {
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash, sessionsRevokedAt: revokedAt },
+    });
+  }
+
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
   }

@@ -12,6 +12,7 @@ import {
   AccountBannedException,
   EmailAlreadyExistsException,
   InvalidCredentialsException,
+  InvalidCurrentPasswordException,
   UnauthenticatedException,
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
@@ -166,6 +167,39 @@ export class AuthService {
 
     const tokens = this.generateTokens(record);
     await this.touchLastActive(record.id);
+    return { user: this.toSafeUser(record), tokens };
+  }
+
+  /**
+   * Self-service password change. Verifies the current password, stores the
+   * new one and revokes every other session (any token issued before now),
+   * then issues fresh tokens so the caller's own session continues.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ user: SafeUser; tokens: TokenPair }> {
+    const [record, passwordHash] = await Promise.all([
+      this.findUserById(userId),
+      this.usersService.findPasswordHash(userId),
+    ]);
+    if (!record || !passwordHash) {
+      throw new UnauthenticatedException();
+    }
+    if (!(await verifyPassword(passwordHash, currentPassword))) {
+      throw new InvalidCurrentPasswordException();
+    }
+
+    await this.usersService.setPassword(
+      userId,
+      await hashPassword(newPassword),
+      new Date(),
+    );
+
+    // Issued after the revocation instant (same second at the earliest),
+    // so isTokenRevoked() lets these through while older tokens are refused.
+    const tokens = this.generateTokens(record);
     return { user: this.toSafeUser(record), tokens };
   }
 

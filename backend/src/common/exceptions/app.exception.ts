@@ -44,6 +44,20 @@ export class InvalidCredentialsException extends AppException {
   }
 }
 
+/**
+ * Wrong current password on a self-service password change. Deliberately a
+ * 400, not a 401: clients treat 401 as "session expired, refresh and retry".
+ */
+export class InvalidCurrentPasswordException extends AppException {
+  constructor() {
+    super(
+      'INVALID_CURRENT_PASSWORD',
+      'Your current password is incorrect.',
+      HttpStatus.BAD_REQUEST,
+    );
+  }
+}
+
 export class UnauthenticatedException extends AppException {
   constructor(message = 'Authentication required') {
     super('UNAUTHENTICATED', message, HttpStatus.UNAUTHORIZED);
