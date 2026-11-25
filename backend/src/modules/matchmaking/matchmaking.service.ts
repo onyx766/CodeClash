@@ -186,7 +186,9 @@ export class MatchmakingService {
       // Already started, cancelled or finished. Same 409 INVALID_MATCH_STATE
       // as before - clients key off the code - with a message that says so
       // instead of the exception's rating-oriented default.
-      throw new InvalidMatchStateException('This match is no longer waiting for players to accept.');
+      throw new InvalidMatchStateException(
+        'This match is no longer waiting for players to accept.',
+      );
     }
     const participant = match.participants.find((p) => p.userId === userId);
     if (!participant) throw new ForbiddenException('You are not a participant in this match.');
@@ -313,7 +315,9 @@ export class MatchmakingService {
       if (missed.length === 0) {
         // Nobody missed the ready check, so nobody is requeued at the
         // other's expense: both simply learn the match could not start.
-        this.logger.warn(`Quick Match ${match.id} cancelled: both players accepted but it never started`);
+        this.logger.warn(
+          `Quick Match ${match.id} cancelled: both players accepted but it never started`,
+        );
         for (const p of match.participants) {
           this.emitToUser(p.userId, SocketEvents.MATCHMAKING_CANCELLED, {
             matchId: match.id,
@@ -333,7 +337,11 @@ export class MatchmakingService {
         });
       }
       for (const p of accepted) {
-        this.emitToUser(p.userId, SocketEvents.MATCHMAKING_OPPONENT_UNAVAILABLE, { matchId: match.id });
+        this.emitToUser(
+          p.userId,
+          SocketEvents.MATCHMAKING_OPPONENT_UNAVAILABLE,
+          { matchId: match.id },
+        );
       }
       // Documented choice (spec section 35): automatically requeue whoever
       // was ready, rather than dropping them back to IDLE.

@@ -420,7 +420,9 @@ describe('MatchmakingService', () => {
         const { service, prisma } = await buildService();
         prisma.match.findUnique.mockResolvedValue(match({ status }));
 
-        const error = await service.handleReady('match-1', 'a').catch((e: unknown) => e);
+        const error = await service
+          .handleReady('match-1', 'a')
+          .catch((e: unknown) => e);
 
         expect(error).toBeInstanceOf(InvalidMatchStateException);
         expect((error as InvalidMatchStateException).getStatus()).toBe(409);
@@ -548,9 +550,23 @@ describe('MatchmakingService', () => {
   });
 
   describe('processReadyTimeouts', () => {
+    type Sent = Array<{ to: string; event: string; payload: unknown }>;
     /** What each user channel received, minus the requeue's own events. */
-    const outcomes = (sent: Array<{ to: string; event: string; payload: unknown }>) =>
+    const outcomes = (sent: Sent) =>
       sent.filter((s) => s.event !== 'matchmaking:searching');
+    type Claim = {
+      where: { id: string; status: string };
+      data: { status: string };
+    };
+    /** The conditional update the sweep used to claim a match. */
+    const claim = (prisma: MockPrisma, call = 0) =>
+      (prisma.match.updateMany.mock.calls as Array<[Claim]>)[call][0];
+    const participant = (matchId: string, userId: string, ready: boolean) => ({
+      matchId,
+      userId,
+      readyAt: ready ? new Date() : null,
+      ratingBefore: 1500,
+    });
 
     it('cancels an expired match, requeues only the ready player, with no rating impact', async () => {
       const { service, prisma, redis, sent } = await buildService();
@@ -581,7 +597,11 @@ describe('MatchmakingService', () => {
           event: 'matchmaking:cancelled',
           payload: { matchId: 'match-1', reason: 'READY_TIMEOUT' },
         },
-        { to: 'user:ready-user', event: 'matchmaking:opponent-unavailable', payload: { matchId: 'match-1' } },
+        {
+          to: 'user:ready-user',
+          event: 'matchmaking:opponent-unavailable',
+          payload: { matchId: 'match-1' },
+        },
       ]);
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'ready-user')).toBe('1500');
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'no-show')).toBeNull();
@@ -623,8 +643,8 @@ describe('MatchmakingService', () => {
           status: 'READY',
           readyDeadline: new Date(Date.now() - 31_000),
           participants: [
-            { matchId: 'match-4', userId: 'x', readyAt: new Date(), ratingBefore: 1500 },
-            { matchId: 'match-4', userId: 'y', readyAt: new Date(), ratingBefore: 1500 },
+            participant('match-4', 'x', true),
+            participant('match-4', 'y', true),
           ],
         },
       ]);
@@ -632,9 +652,9 @@ describe('MatchmakingService', () => {
 
       await service.processReadyTimeouts();
 
-      expect(prisma.match.updateMany).toHaveBeenCalledWith({
+      expect(claim(prisma)).toMatchObject({
         where: { id: 'match-4', status: 'READY' },
-        data: expect.objectContaining({ status: 'CANCELLED' }),
+        data: { status: 'CANCELLED' },
       });
       expect(sent).toEqual(
         ['x', 'y'].map((userId) => ({
@@ -654,23 +674,29 @@ describe('MatchmakingService', () => {
         status: 'PENDING_READY',
         readyDeadline,
         participants: [
-          { matchId: 'match-5', userId: 'x', readyAt: new Date(), ratingBefore: 1500 },
-          { matchId: 'match-5', userId: 'y', readyAt: new Date(), ratingBefore: 1500 },
+          participant('match-5', 'x', true),
+          participant('match-5', 'y', true),
         ],
       });
+      const secondsAgo = (seconds: number) =>
+        new Date(Date.now() - seconds * 1000);
 
       // Just past the deadline: the second accept is moving it to READY.
-      prisma.match.findMany.mockResolvedValueOnce([bothAccepted(new Date(Date.now() - 1000))]);
+      prisma.match.findMany.mockResolvedValueOnce([
+        bothAccepted(secondsAgo(1)),
+      ]);
       await service.processReadyTimeouts();
       expect(prisma.match.updateMany).not.toHaveBeenCalled();
       expect(sent).toEqual([]);
 
       // Still not started once the grace period is over.
-      prisma.match.findMany.mockResolvedValueOnce([bothAccepted(new Date(Date.now() - 31_000))]);
+      prisma.match.findMany.mockResolvedValueOnce([
+        bothAccepted(secondsAgo(31)),
+      ]);
       await service.processReadyTimeouts();
-      expect(prisma.match.updateMany).toHaveBeenCalledWith({
+      expect(claim(prisma)).toMatchObject({
         where: { id: 'match-5', status: 'PENDING_READY' },
-        data: expect.objectContaining({ status: 'CANCELLED' }),
+        data: { status: 'CANCELLED' },
       });
       expect(sent.map((s) => [s.to, s.payload])).toEqual([
         ['user:x', { matchId: 'match-5', reason: 'START_FAILED' }],

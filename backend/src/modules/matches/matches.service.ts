@@ -394,7 +394,8 @@ export class MatchesService {
     // refresh must not show a deadline for a match that started or ended.
     const awaitingReady =
       match.type === MatchType.QUICK_MATCH &&
-      (match.status === MatchStatus.PENDING_READY || match.status === MatchStatus.READY);
+      (match.status === MatchStatus.PENDING_READY ||
+        match.status === MatchStatus.READY);
 
     return {
       success: true,

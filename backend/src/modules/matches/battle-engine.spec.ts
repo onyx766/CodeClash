@@ -377,32 +377,41 @@ describe('Five-challenge battle engine', () => {
       seedPlayers(h.prisma);
       const readyDeadline = new Date(Date.now() + 10_000);
       const [match] = h.prisma.seed('match', [
-        { type: 'QUICK_MATCH', status: 'PENDING_READY', ratingEligible: true, readyDeadline },
+        {
+          type: 'QUICK_MATCH',
+          status: 'PENDING_READY',
+          ratingEligible: true,
+          readyDeadline,
+        },
       ]);
+      const matchId = match.id as string;
       h.prisma.seed('matchParticipant', [
-        { matchId: match.id, userId: RYAN, ratingBefore: 1850, readyAt: new Date() },
-        { matchId: match.id, userId: MASTER1, ratingBefore: 1720 },
+        { matchId, userId: RYAN, ratingBefore: 1850, readyAt: new Date() },
+        { matchId, userId: MASTER1, ratingBefore: 1720 },
       ]);
+      const view = async (userId: string) =>
+        (await h.matches.getMatch(matchId, PLAYER(userId))).match;
 
-      const ryan = await h.matches.getMatch(match.id, PLAYER(RYAN));
-      expect(ryan.match.readyDeadline).toEqual(readyDeadline);
-      expect(ryan.match.me).toMatchObject({ id: RYAN, ready: true });
-      expect(ryan.match.opponent).toMatchObject({ id: MASTER1, ready: false });
-      const master = await h.matches.getMatch(match.id, PLAYER(MASTER1));
-      expect(master.match.me).toMatchObject({ id: MASTER1, ready: false });
-      expect(master.match.opponent).toMatchObject({ id: RYAN, ready: true });
+      const ryan = await view(RYAN);
+      expect(ryan.readyDeadline).toEqual(readyDeadline);
+      expect(ryan.me).toMatchObject({ id: RYAN, ready: true });
+      expect(ryan.opponent).toMatchObject({ id: MASTER1, ready: false });
+      const master = await view(MASTER1);
+      expect(master.me).toMatchObject({ id: MASTER1, ready: false });
+      expect(master.opponent).toMatchObject({ id: RYAN, ready: true });
 
       // Both accepted, start in flight: still part of the ready check.
-      h.prisma.rows('matchParticipant').forEach((p) => (p.readyAt = new Date()));
-      h.match(match.id).status = 'READY';
-      const ready = await h.matches.getMatch(match.id, PLAYER(RYAN));
-      expect(ready.match.readyDeadline).toEqual(readyDeadline);
-      expect([ready.match.me!.ready, ready.match.opponent!.ready]).toEqual([true, true]);
+      for (const row of h.prisma.rows('matchParticipant')) {
+        row.readyAt = new Date();
+      }
+      h.match(matchId).status = 'READY';
+      const ready = await view(RYAN);
+      expect(ready.readyDeadline).toEqual(readyDeadline);
+      expect([ready.me?.ready, ready.opponent?.ready]).toEqual([true, true]);
 
       for (const status of ['IN_PROGRESS', 'CANCELLED']) {
-        h.match(match.id).status = status;
-        const view = await h.matches.getMatch(match.id, PLAYER(RYAN));
-        expect(view.match.readyDeadline).toBeNull();
+        h.match(matchId).status = status;
+        expect((await view(RYAN)).readyDeadline).toBeNull();
       }
     });
 
@@ -410,10 +419,10 @@ describe('Five-challenge battle engine', () => {
       const h = harness();
       const { matchId } = await startPrivateBattle(h);
 
-      const view = await h.matches.getMatch(matchId, PLAYER(RYAN));
+      const { match } = await h.matches.getMatch(matchId, PLAYER(RYAN));
 
-      expect(view.match.readyDeadline).toBeNull();
-      expect([view.match.me!.ready, view.match.opponent!.ready]).toEqual([false, false]);
+      expect(match.readyDeadline).toBeNull();
+      expect([match.me?.ready, match.opponent?.ready]).toEqual([false, false]);
     });
 
     it('cancels (unrated) instead of starting a broken match when the pool is too small', async () => {
@@ -428,11 +437,12 @@ describe('Five-challenge battle engine', () => {
       expect(h.prisma.rows('matchChallenge')).toHaveLength(0);
       expect(h.rating.applyMatchRating).not.toHaveBeenCalled();
       // Both accepted, so both are told the match could not start.
+      const payload = { matchId: match.id as string, reason: 'START_FAILED' };
       expect(h.eventsNamed('matchmaking:cancelled')).toEqual(
         [RYAN, MASTER1].map((userId) => ({
           to: `user:${userId}`,
           event: 'matchmaking:cancelled',
-          payload: { matchId: match.id, reason: 'START_FAILED' },
+          payload,
         })),
       );
     });
