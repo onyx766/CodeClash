@@ -98,6 +98,7 @@ services:
       DOCKER_HOST: tcp://dind:2375
       BACKEND_URL: http://backend:4000
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-node:22-alpine}
+      SANDBOX_CPUS: ${SANDBOX_CPUS:-1}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
     volumes:
       - runner-work:/work_shared
