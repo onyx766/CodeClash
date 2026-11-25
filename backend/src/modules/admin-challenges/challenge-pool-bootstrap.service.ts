@@ -15,7 +15,12 @@ import { ChallengeValidationService } from './challenge-validation.service';
 /** First attempt shortly after boot; the runner usually starts alongside us. */
 export const BOOTSTRAP_INITIAL_DELAY_MS = 5_000;
 /** Retry backoff ceiling while the runner is not ready yet. */
-export const BOOTSTRAP_MAX_DELAY_MS = 5 * 60_000;
+export const BOOTSTRAP_MAX_DELAY_MS = 60_000;
+/**
+ * Re-check interval once everything is validated, so challenges published or
+ * imported later (e.g. a re-run seed) are picked up too. Cheap: one count query.
+ */
+export const BOOTSTRAP_POLL_INTERVAL_MS = 60_000;
 /** Challenges validated per pass; each is a full sandbox job. */
 const BATCH_LIMIT = 100;
 
@@ -41,8 +46,10 @@ export type BootstrapPassResult =
  *
  * Only NOT_CHECKED challenges are picked up: one that FAILED stays failed
  * until an admin fixes and re-validates it. If the runner is unreachable the
- * pass stops without recording anything and is retried with backoff. A Redis
- * lock keeps several API instances from validating the same set at once.
+ * pass stops without recording anything and is retried with backoff; once a
+ * pass completes, the check repeats every minute so challenges published
+ * later are covered too. A Redis lock keeps several API instances from
+ * validating the same set at once.
  *
  * Controlled by AUTO_VALIDATE_CHALLENGES (default true); never runs under
  * NODE_ENV=test.
@@ -116,11 +123,10 @@ export class ChallengePoolBootstrapService
       this.schedule(delay, attempt + 1);
       return;
     }
-    if (result.state === 'done' && result.errors > 0) {
-      // Something other than runner availability went wrong for a few;
-      // give them another chance later without hammering.
-      this.schedule(BOOTSTRAP_MAX_DELAY_MS, attempt + 1);
-    }
+    // Done (or nothing to do): keep watching for newly published challenges.
+    // A pass that hit unexpected errors leaves those challenges NOT_CHECKED,
+    // so they are simply retried on the next poll.
+    this.schedule(BOOTSTRAP_POLL_INTERVAL_MS, 0);
   }
 
   /** One validation pass. Public for tests and manual triggering. */

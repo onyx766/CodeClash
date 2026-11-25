@@ -142,4 +142,24 @@ describe('ChallengePoolBootstrapService', () => {
     expect(ChallengePoolBootstrapService.retryDelay(1)).toBe(20_000);
     expect(ChallengePoolBootstrapService.retryDelay(20)).toBe(BOOTSTRAP_MAX_DELAY_MS);
   });
+
+  describe('scheduling', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('keeps polling for newly published challenges after an idle pass', async () => {
+      const { service, prisma } = setup({ targets: [] });
+      service.onApplicationBootstrap();
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(prisma.challenge.findMany).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(prisma.challenge.findMany).toHaveBeenCalledTimes(2);
+
+      service.onApplicationShutdown();
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(prisma.challenge.findMany).toHaveBeenCalledTimes(2);
+    });
+  });
 });
