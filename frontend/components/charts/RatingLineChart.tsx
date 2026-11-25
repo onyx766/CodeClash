@@ -22,15 +22,16 @@ export default function RatingLineChart({
   const rawMax = Math.max(...values);
   const rawMin = Math.min(...values);
   const step = niceStep(rawMax - rawMin || 100);
-  const max = Math.ceil(rawMax / step) * step;
   const min = Math.floor(rawMin / step) * step;
-  const span = max - min || 1;
+  // A flat line (e.g. only unrated draws) still gets one grid step of room.
+  const max = Math.max(Math.ceil(rawMax / step) * step, min + step);
+  const span = max - min;
 
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const plotWidth = WIDTH - PAD_X * 2;
 
   const points = data.map((d, i) => {
-    const x = PAD_X + (i / (data.length - 1)) * plotWidth;
+    const x = PAD_X + (data.length > 1 ? i / (data.length - 1) : 0.5) * plotWidth;
     const y = PAD_TOP + plotHeight - ((d.value - min) / span) * plotHeight;
     return { x, y, ...d };
   });
@@ -44,7 +45,7 @@ export default function RatingLineChart({
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-52 w-full" preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-auto w-full" role="img" aria-label="Rating over time">
         <defs>
           <linearGradient id="ratingGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-violet)" stopOpacity="0.35" />
@@ -70,7 +71,7 @@ export default function RatingLineChart({
         {points.map((p, i) =>
           i % labelStride === 0 || i === points.length - 1 ? (
             <text
-              key={p.label}
+              key={i}
               x={p.x}
               y={HEIGHT - 6}
               fontSize="10"
