@@ -12,6 +12,7 @@
  * backtick on the invocation line terminated that literal early, which left
  * main.ts unparseable (and therefore the runner unstartable). It is a real file
  * now so that cannot happen again.
+ * this
  */
 
 const fs = require('fs');
