@@ -13,15 +13,21 @@ import CreateRoomModal from "../../components/app/CreateRoomModal";
 import MyInvitations from "../../components/app/MyInvitations";
 import QuickMatchCard from "../../components/app/QuickMatchCard";
 import useQuickMatch from "../../hooks/useQuickMatch";
+import useSearchParam from "../../hooks/useSearchParam";
 
 type ActiveMatch = { id: string; status: MatchStatus; type: "QUICK_MATCH" | "PRIVATE_ROOM" };
 
 export default function LobbyPage() {
   const router = useRouter();
-  const invitedCode =
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("code") : null;
-  const [code, setCode] = useState(() => invitedCode?.toUpperCase() ?? "");
-  const [joinOpen, setJoinOpen] = useState(() => Boolean(invitedCode));
+  // An invite link (/lobby?code=...) opens the join form pre-filled until the
+  // player edits it. Read through useSearchParam: on a client-side navigation
+  // (e.g. right after signing in) window.location still holds the previous
+  // URL during the first render.
+  const invitedCode = useSearchParam("code")?.toUpperCase() ?? null;
+  const [codeInput, setCodeInput] = useState<string | null>(null);
+  const code = codeInput ?? invitedCode ?? "";
+  const [joinToggled, setJoinToggled] = useState<boolean | null>(null);
+  const joinOpen = joinToggled ?? Boolean(invitedCode);
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
   const quickMatch = useQuickMatch();
@@ -50,7 +56,7 @@ export default function LobbyPage() {
   const join = async (roomCode: string) => {
     setError("");
     if (!roomCode) {
-      setJoinOpen(true);
+      setJoinToggled(true);
       return;
     }
     try {
@@ -86,7 +92,7 @@ export default function LobbyPage() {
       desc: "Enter a room code to join your friend's battle.",
       cta: "Join Room",
       btn: "btn-outline-green",
-      onClick: () => setJoinOpen((v) => !v),
+      onClick: () => setJoinToggled(!joinOpen),
       ring: "from-[#0c2020] to-[#0b1020] border-teal/30",
       badge: "from-teal to-green",
       ctaIcon: LogIn,
@@ -169,7 +175,7 @@ export default function LobbyPage() {
         >
           <input
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => setCodeInput(e.target.value)}
             placeholder="Enter room code (e.g. AB12CD)"
             aria-label="Room code"
             className="field"
