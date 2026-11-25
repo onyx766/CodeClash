@@ -87,6 +87,33 @@ export class AdminChallengesService {
     return { challenges: challenges.map(toAdminChallengeSummary) };
   }
 
+  /**
+   * GET /admin/challenges/stats - the console's overview counts, made in the
+   * database so they stay right past list()'s 200-row page. drafts,
+   * published and archived count challenges by status; validationPassed
+   * counts every challenge whose last validation passed, whatever its status.
+   */
+  async stats() {
+    const [byStatus, validationPassed] = await Promise.all([
+      this.prisma.challenge.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.challenge.count({
+        where: { validationStatus: ChallengeValidationStatus.PASSED },
+      }),
+    ]);
+    const withStatus = (status: ChallengeStatus) =>
+      byStatus.find((row) => row.status === status)?._count._all ?? 0;
+    return {
+      success: true,
+      stats: {
+        total: byStatus.reduce((sum, row) => sum + row._count._all, 0),
+        drafts: withStatus(ChallengeStatus.DRAFT),
+        published: withStatus(ChallengeStatus.PUBLISHED),
+        archived: withStatus(ChallengeStatus.ARCHIVED),
+        validationPassed,
+      },
+    };
+  }
+
   async getById(id: string) {
     return { challenge: toAdminChallenge(await this.loadOrThrow(id)) };
   }

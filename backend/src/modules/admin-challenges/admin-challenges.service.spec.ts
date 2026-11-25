@@ -563,3 +563,67 @@ describe('AdminChallengesService', () => {
     });
   });
 });
+
+describe('AdminChallengesService.stats', () => {
+  function serviceWith(
+    byStatus: Array<{ status: ChallengeStatus; _count: { _all: number } }>,
+    validationPassed: number,
+  ) {
+    const challenge = {
+      groupBy: jest.fn().mockResolvedValue(byStatus),
+      count: jest.fn().mockResolvedValue(validationPassed),
+      findMany: jest.fn(),
+    };
+    const service = new AdminChallengesService({ challenge } as never);
+    return { service, challenge };
+  }
+
+  it('counts every challenge in the database, past the 200-row list page', async () => {
+    const { service, challenge } = serviceWith(
+      [
+        { status: ChallengeStatus.DRAFT, _count: { _all: 250 } },
+        { status: ChallengeStatus.PUBLISHED, _count: { _all: 17 } },
+        { status: ChallengeStatus.ARCHIVED, _count: { _all: 3 } },
+      ],
+      16,
+    );
+
+    await expect(service.stats()).resolves.toEqual({
+      success: true,
+      stats: {
+        total: 270,
+        drafts: 250,
+        published: 17,
+        archived: 3,
+        validationPassed: 16,
+      },
+    });
+    expect(challenge.groupBy).toHaveBeenCalledWith({
+      by: ['status'],
+      _count: { _all: true },
+    });
+    // Passed validation whatever the status - drafts included.
+    expect(challenge.count).toHaveBeenCalledWith({
+      where: { validationStatus: ChallengeValidationStatus.PASSED },
+    });
+    expect(challenge.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reports zero for a status nobody has', async () => {
+    const { service } = serviceWith(
+      [{ status: ChallengeStatus.DRAFT, _count: { _all: 2 } }],
+      0,
+    );
+
+    await expect(service.stats()).resolves.toEqual({
+      success: true,
+      stats: {
+        total: 2,
+        drafts: 2,
+        published: 0,
+        archived: 0,
+        validationPassed: 0,
+      },
+    });
+  });
+});
