@@ -183,7 +183,10 @@ export class MatchmakingService {
       throw new InvalidMatchStateException('This match does not use ready confirmation.');
     }
     if (match.status !== MatchStatus.PENDING_READY && match.status !== MatchStatus.READY) {
-      throw new InvalidMatchStateException();
+      // Already started, cancelled or finished. Same 409 INVALID_MATCH_STATE
+      // as before - clients key off the code - with a message that says so
+      // instead of the exception's rating-oriented default.
+      throw new InvalidMatchStateException('This match is no longer waiting for players to accept.');
     }
     const participant = match.participants.find((p) => p.userId === userId);
     if (!participant) throw new ForbiddenException('You are not a participant in this match.');

@@ -12,6 +12,7 @@ import { MatchmakingStatus } from './matchmaking.types';
 import {
   ActiveMatchExistsException,
   ActiveRoomExistsException,
+  InvalidMatchStateException,
   MatchAlreadyFoundException,
   MatchmakingUnavailableException,
   UserStatsNotFoundException,
@@ -401,6 +402,24 @@ describe('MatchmakingService', () => {
 
       await expect(service.handleReady('match-1', 'stranger')).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    it.each(['IN_PROGRESS', 'CANCELLED', 'FINISHED'])(
+      'refuses a %s match with 409 INVALID_MATCH_STATE and a message about the ready check',
+      async (status) => {
+        const { service, prisma } = await buildService();
+        prisma.match.findUnique.mockResolvedValue(match({ status }));
+
+        const error = await service.handleReady('match-1', 'a').catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(InvalidMatchStateException);
+        expect((error as InvalidMatchStateException).getStatus()).toBe(409);
+        expect((error as InvalidMatchStateException).getResponse()).toEqual({
+          code: 'INVALID_MATCH_STATE',
+          message: 'This match is no longer waiting for players to accept.',
+        });
+        expect(prisma.matchParticipant.update).not.toHaveBeenCalled();
+      },
+    );
 
     it('does not start the match when only one participant is ready', async () => {
       const { service, prisma, matches } = await buildService();
