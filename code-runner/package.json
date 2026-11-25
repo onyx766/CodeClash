@@ -5,6 +5,8 @@
   "scripts": {
     "start": "ts-node src/main.ts",
     "worker": "ts-node worker/src/worker.ts",
+    "start:prod": "node dist/src/main.js",
+    "worker:prod": "node dist/worker/src/worker.js",
     "build": "tsc"
   },
   "dependencies": {
