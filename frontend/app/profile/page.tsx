@@ -6,7 +6,6 @@ import {
   Calendar,
   ChevronRight,
   Code2,
-  Coins,
   Compass,
   Crown,
   Eye,
@@ -145,7 +144,6 @@ export default function ProfilePage() {
     },
     { icon: Flame, tone: "amber", label: "Best Streak", value: stats?.bestStreak ?? 0, sub: "Matches" },
     { icon: Gamepad2, tone: "rose", label: "Total Matches", value: stats?.matchesPlayed ?? 0, sub: "" },
-    { icon: Coins, tone: "amber", label: "Coins", value: (stats?.coins ?? 0).toLocaleString(), sub: "" },
   ] as const;
 
   return (
@@ -198,7 +196,7 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {stats7.map((s) => (
           <div key={s.label} className="card p-3.5">
             <IconBadge tone={s.tone} size={30} rounded="rounded-lg">
