@@ -102,19 +102,4 @@ export const profile = {
   update: (payload: Record<string, unknown>) => request('PATCH', '/users/me/profile', payload),
 };
 
-export const infra = {
-  runnerReady: () => request('GET', '/runner/ready').catch(() => ({ ready: false })),
-  runnerHealth: () => request('GET', '/runner/health').catch(() => ({ ok: false })),
-};
-
-export const infraStatus = {
-  status: () => request('GET', '/runner/status').catch(() => ({ workers: 0, queued: 0, processing: 0 })),
-  jobs: () => request('GET', '/runner/jobs').catch(() => ({ items: [] })),
-  jobDetails: async (jobId: string) => {
-    try { return await request('GET', `/jobs/${jobId}`); } catch (e) {
-      try { return await request('GET', `/runner/job/${jobId}`); } catch (e2) { return { jobId, items: [] }; }
-    }
-  },
-};
-
 export default { request };
