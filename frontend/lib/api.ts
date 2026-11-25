@@ -1,3 +1,4 @@
+import type { MatchHistoryPage } from './battle';
 import type { MatchmakingResponse, ReadyResponse } from './matchmaking';
 
 // NEXT_PUBLIC_API_URL overrides this for deployments where the API lives on
@@ -214,8 +215,9 @@ export const matches = {
   challenges: (id: string) => request('GET', `/matches/${id}/challenges`),
   progress: (id: string) => request('GET', `/matches/${id}/progress`),
   active: () => request('GET', '/matches/me/active'),
+  // Finished matches, newest first. pageSize is capped at 50 by the API.
   history: (page = 1, pageSize = 10) =>
-    request('GET', `/matches/me/history?page=${page}&pageSize=${pageSize}`),
+    request('GET', `/matches/me/history?page=${page}&pageSize=${pageSize}`) as Promise<MatchHistoryPage>,
   // Quick Match only: accept the match found. Both players must accept
   // before its ready deadline or it is cancelled.
   ready: (id: string) => request('POST', `/matches/${id}/ready`) as Promise<ReadyResponse>,

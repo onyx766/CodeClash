@@ -92,6 +92,24 @@ export interface BattleMatch {
   log: MatchLogEntry[];
 }
 
+/** One finished match in GET /matches/me/history, seen from the player's side. */
+export interface MatchHistoryEntry {
+  matchId: string;
+  type: "QUICK_MATCH" | "PRIVATE_ROOM";
+  ratingEligible: boolean;
+  finishedAt: string | null;
+  result: "WIN" | "LOSS" | "DRAW";
+  /** null when the match did not move rating (casual, or a ranked draw with nothing solved). */
+  ratingDelta: number | null;
+  ratingAfter: number;
+  opponent: { id: string; username: string; displayName: string | null; avatarUrl: string | null } | null;
+}
+
+export interface MatchHistoryPage {
+  matches: MatchHistoryEntry[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+}
+
 export interface ChallengeStatement {
   matchChallengeId: string;
   position: number;

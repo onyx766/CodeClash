@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { BarChart3, Flame, Gem, LayoutGrid, Swords, Trophy, User, Users } from "lucide-react";
 import { SideNav, type SideItem } from "../layout/AppLayout";
+import useAuth from "../../hooks/useAuth";
 import useProfile from "../../hooks/useProfile";
+import { formatWinRate } from "../../hooks/useLeaderboard";
 
 const items: SideItem[] = [
   { href: "/lobby", label: "Lobby", icon: LayoutGrid },
@@ -11,30 +15,6 @@ const items: SideItem[] = [
   { href: "/community", label: "Community", icon: Users },
   { href: "/profile", label: "Profile", icon: User },
 ];
-
-function Sparkline() {
-  return (
-    <svg viewBox="0 0 120 34" className="mt-3 h-9 w-full" aria-hidden="true">
-      <defs>
-        <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--color-violet)" stopOpacity="0.45" />
-          <stop offset="100%" stopColor="var(--color-violet)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M0 28 L15 24 L30 26 L45 18 L60 20 L75 12 L90 14 L105 6 L120 4 L120 34 L0 34 Z"
-        fill="url(#spark)"
-      />
-      <path
-        d="M0 28 L15 24 L30 26 L45 18 L60 20 L75 12 L90 14 L105 6 L120 4"
-        fill="none"
-        stroke="var(--color-violet)"
-        strokeWidth="1.6"
-      />
-      <circle cx="120" cy="4" r="2.6" fill="var(--color-violet)" />
-    </svg>
-  );
-}
 
 export function YourStatsCard() {
   const { stats } = useProfile();
@@ -47,13 +27,11 @@ export function YourStatsCard() {
         {stats ? stats.rating : "—"}
       </p>
 
-      <Sparkline />
-
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center">
         {[
-          { label: "Wins", value: stats?.wins ?? 0 },
-          { label: "Losses", value: stats?.losses ?? 0 },
-          { label: "Win Rate", value: `${stats?.winRate ?? 0}%` },
+          { label: "Wins", value: stats?.wins ?? "—" },
+          { label: "Losses", value: stats?.losses ?? "—" },
+          { label: "Win Rate", value: stats ? formatWinRate(stats.wins, stats.matchesPlayed) : "—" },
         ].map((s) => (
           <div key={s.label}>
             <p className="eyebrow !text-[9.5px]">{s.label}</p>
@@ -65,9 +43,8 @@ export function YourStatsCard() {
       <div className="mt-3 flex items-center gap-2.5 border-t border-line pt-3">
         <Flame size={17} className="text-amber" />
         <span>
-          <span className="block text-[11px] text-dim">Best Streak</span>
-          <span className="block text-[13px] font-bold">{stats?.bestStreak ?? 0}</span>
-          <span className="block text-[10.5px] text-dim">Matches</span>
+          <span className="block text-[11px] text-dim">Best Win Streak</span>
+          <span className="block text-[13px] font-bold">{stats?.bestStreak ?? "—"}</span>
         </span>
       </div>
 
@@ -102,13 +79,16 @@ export function TournamentsCard() {
 }
 
 export default function MainSidebar({ footer }: { footer?: React.ReactNode }) {
+  const { user } = useAuth();
   return (
     <>
       <SideNav items={items} />
-      <div>
-        <p className="eyebrow mb-2 px-1">Your Stats</p>
-        <YourStatsCard />
-      </div>
+      {user && (
+        <div>
+          <p className="eyebrow mb-2 px-1">Your Ranked Stats</p>
+          <YourStatsCard />
+        </div>
+      )}
       {footer ?? <TournamentsCard />}
     </>
   );
