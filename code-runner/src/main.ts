@@ -139,6 +139,10 @@ app.post('/v2/judge', async (req, res) => {
   const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
   try { await fs.mkdir(baseDir, { recursive: true }); } catch (e) {}
   const tmp = await fs.mkdtemp(path.join(baseDir, 'judge-'));
+  // mkdtemp creates the directory 0700; the sandbox reads it as an
+  // unprivileged uid, so it must be world-readable (it holds no secrets that
+  // the job itself is not given anyway).
+  await fs.chmod(tmp, 0o755);
   const jobId = uuidv4();
 
   const limits = job.limits || {};
@@ -265,6 +269,7 @@ app.post('/run', async (req, res) => {
   const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
   try { await fs.mkdir(baseDir, { recursive: true }); } catch (e) {}
   const tmp = await fs.mkdtemp(path.join(baseDir, 'code-runner-'));
+  await fs.chmod(tmp, 0o755);
   const jobId = uuidv4();
   try {
     await fs.writeFile(path.join(tmp, 'code.js'), code, 'utf8');
