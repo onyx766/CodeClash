@@ -193,6 +193,10 @@ export class MatchmakingService {
         where: { matchId_userId: { matchId, userId } },
         data: { readyAt: new Date() },
       });
+      // Both players see "accepted" right away instead of on their next poll.
+      for (const p of match.participants) {
+        this.emitToUser(p.userId, SocketEvents.MATCH_READY, { matchId, userId });
+      }
     }
 
     // Re-read fresh from the DB (not the snapshot above) so a concurrent

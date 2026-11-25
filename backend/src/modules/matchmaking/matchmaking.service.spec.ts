@@ -471,6 +471,21 @@ describe('MatchmakingService', () => {
       expect(matches.startQuickMatch).toHaveBeenCalledTimes(1);
     });
 
+    it('tells both players when one of them accepts', async () => {
+      const { service, prisma, emit } = await buildService();
+      prisma.match.findUnique.mockResolvedValue(match());
+      prisma.matchParticipant.findMany.mockResolvedValue([
+        { matchId: 'match-1', userId: 'a', readyAt: new Date() },
+        { matchId: 'match-1', userId: 'b', readyAt: null },
+      ]);
+
+      await service.handleReady('match-1', 'a');
+
+      const readyEvents = emit.mock.calls.filter(([event]) => event === 'match:ready');
+      expect(readyEvents).toHaveLength(2);
+      expect(readyEvents[0][1]).toEqual({ matchId: 'match-1', userId: 'a' });
+    });
+
     it('reports the status the start produced, not an assumed IN_PROGRESS', async () => {
       const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
