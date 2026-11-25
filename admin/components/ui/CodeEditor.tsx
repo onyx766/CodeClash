@@ -63,6 +63,9 @@ export function CodeEditor({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // The Tab and Enter helpers below write through onChange, which would get
+    // around the textarea's own readOnly.
+    if (readOnly) return;
     const element = event.currentTarget;
 
     // Tab inserts two spaces instead of moving focus out of the editor.
@@ -169,12 +172,14 @@ export function JsonEditor({
   label,
   minRows = 4,
   placeholder,
+  readOnly,
 }: {
   value: string;
   onChange: (next: string) => void;
   label?: string;
   minRows?: number;
   placeholder?: string;
+  readOnly?: boolean;
 }) {
   const error = useMemo(() => {
     if (!value.trim()) return null;
@@ -196,6 +201,7 @@ export function JsonEditor({
         minRows={minRows}
         maxHeight={260}
         placeholder={placeholder}
+        readOnly={readOnly}
         invalid={!!error}
         toolbar={
           error ? (

@@ -137,10 +137,11 @@ export function ChallengeActionBar({
           <Button
             icon={<IconSave size={15} />}
             loading={busy.saving}
-            disabled={!idle}
+            disabled={!idle || (!!challengeId && !dirty)}
+            title={challengeId && !dirty ? "No changes to save" : undefined}
             onClick={onSave}
           >
-            Save Draft
+            {status === "PUBLISHED" ? "Save Changes" : "Save Draft"}
           </Button>
 
           <Button

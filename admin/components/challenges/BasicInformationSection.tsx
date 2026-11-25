@@ -19,10 +19,13 @@ export function BasicInformationSection({
   draft,
   patch,
   disabled,
+  lockSlug,
 }: {
   draft: ChallengeDraft;
   patch: (changes: Partial<ChallengeDraft>) => void;
   disabled?: boolean;
+  /** A published challenge keeps its slug; the other fields stay editable. */
+  lockSlug?: boolean;
 }) {
   const [tagInput, setTagInput] = useState("");
 
@@ -86,12 +89,16 @@ export function BasicInformationSection({
             label="Slug"
             required
             htmlFor="challenge-slug"
-            hint="URL-friendly identifier (lowercase, hyphens only)."
+            hint={
+              lockSlug
+                ? "Fixed while the challenge is published."
+                : "URL-friendly identifier (lowercase, hyphens only)."
+            }
           >
             <TextInput
               id="challenge-slug"
               value={draft.slug}
-              disabled={disabled}
+              disabled={disabled || lockSlug}
               maxLength={120}
               placeholder="two-sum"
               className="mono"

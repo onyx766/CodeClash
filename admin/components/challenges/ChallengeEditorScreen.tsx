@@ -291,9 +291,10 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
         {locked ? (
           <div className="mt-3">
             <Notice tone="amber">
-              This challenge is published. Its tests, contract, judging and limits are frozen so live and
-              historical matches cannot change underneath them. To change them, archive it, edit and re-validate
-              it, then publish it again. You can still run its checks.
+              This challenge is published. Its title, description, difficulty and tags can still be edited and
+              saved. Its slug, tests, contract, judging and limits are frozen so live and historical matches cannot
+              change underneath them; to change those, archive it, edit and re-validate it, then publish it again.
+              You can still run its checks.
             </Notice>
           </div>
         ) : null}
@@ -334,7 +335,7 @@ export function ChallengeEditorScreen({ challengeId }: { challengeId?: string })
 
         <div className={cx("mt-4 grid gap-4", "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_360px]")}>
           <div className="space-y-4">
-            <BasicInformationSection draft={editor.draft} patch={editor.patch} disabled={locked} />
+            <BasicInformationSection draft={editor.draft} patch={editor.patch} lockSlug={locked} />
             <JudgeMethodSelector draft={editor.draft} patch={editor.patch} disabled={locked} />
           </div>
 

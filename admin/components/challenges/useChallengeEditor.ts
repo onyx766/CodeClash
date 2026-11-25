@@ -7,6 +7,7 @@ import {
   DraftSerializationError,
   draftFromChallenge,
   draftToPayload,
+  draftToPresentationPayload,
   emptyDraft,
   type ChallengeDraft,
 } from "../../lib/draft";
@@ -105,9 +106,14 @@ export function useChallengeEditor() {
     setSaveState("saving");
     setError(null);
 
+    // A published challenge only takes presentational edits (see
+    // draftToPresentationPayload); everything else is sent in full.
+    const published = status === "PUBLISHED";
     let payload: UpsertChallengePayload;
     try {
-      payload = draftToPayload(draft);
+      payload = published
+        ? draftToPresentationPayload(draft)
+        : draftToPayload(draft);
     } catch (caught) {
       setSaving(false);
       setSaveState("error");
@@ -123,7 +129,10 @@ export function useChallengeEditor() {
       if (ticket !== sequence.current) return null;
 
       applyChallenge(response.challenge);
-      setToast({ tone: "green", message: "Draft saved." });
+      setToast({
+        tone: "green",
+        message: published ? "Changes saved." : "Draft saved.",
+      });
       return response.challenge;
     } catch (caught) {
       if (ticket !== sequence.current) return null;
@@ -133,7 +142,7 @@ export function useChallengeEditor() {
     } finally {
       setSaving(false);
     }
-  }, [draft, challengeId, applyChallenge]);
+  }, [draft, challengeId, status, applyChallenge]);
 
   const validate = useCallback(async () => {
     if (!challengeId) {
@@ -232,12 +241,17 @@ export function useChallengeEditor() {
     [applyChallenge],
   );
 
-  /** A validation result only applies to the draft that produced it. */
-  const validationStale = dirty && checks.length > 0;
+  /**
+   * A validation result only applies to the draft that produced it. On a
+   * published challenge only presentational fields can change, and those do
+   * not affect a verdict, so its result stays current while it is edited.
+   */
+  const judgingEditable = status !== "PUBLISHED";
+  const validationStale = dirty && judgingEditable && checks.length > 0;
 
   const effectiveValidationStatus: ValidationStatus = useMemo(
-    () => (dirty ? "NOT_CHECKED" : validationStatus),
-    [dirty, validationStatus],
+    () => (dirty && judgingEditable ? "NOT_CHECKED" : validationStatus),
+    [dirty, judgingEditable, validationStatus],
   );
 
   return {

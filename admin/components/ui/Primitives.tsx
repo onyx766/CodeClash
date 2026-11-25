@@ -463,6 +463,7 @@ export function NumberInput({
   step = 1,
   id,
   invalid,
+  disabled,
 }: {
   value: number;
   onChange: (next: number) => void;
@@ -471,6 +472,7 @@ export function NumberInput({
   step?: number;
   id?: string;
   invalid?: boolean;
+  disabled?: boolean;
 }) {
   const clamp = (next: number) => Math.min(max, Math.max(min, next));
 
@@ -484,6 +486,7 @@ export function NumberInput({
         min={min}
         max={max}
         step={step}
+        disabled={disabled}
         aria-invalid={invalid || undefined}
         onChange={(event) => {
           const parsed = Number(event.target.value);
@@ -494,7 +497,8 @@ export function NumberInput({
         <button
           type="button"
           aria-label="Increase"
-          className="grid h-[15px] w-6 place-items-center rounded-t-[5px] text-dim hover:bg-panel-3 hover:text-fg"
+          disabled={disabled}
+          className="grid h-[15px] w-6 place-items-center rounded-t-[5px] text-dim hover:bg-panel-3 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
           onClick={() => onChange(clamp(value + step))}
         >
           <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="3">
@@ -504,7 +508,8 @@ export function NumberInput({
         <button
           type="button"
           aria-label="Decrease"
-          className="grid h-[15px] w-6 place-items-center rounded-b-[5px] text-dim hover:bg-panel-3 hover:text-fg"
+          disabled={disabled}
+          className="grid h-[15px] w-6 place-items-center rounded-b-[5px] text-dim hover:bg-panel-3 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
           onClick={() => onChange(clamp(value - step))}
         >
           <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="3">
