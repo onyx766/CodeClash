@@ -95,6 +95,10 @@ import { AppService } from './app.service';
         // /run/secrets/runner_secret). When set, every judge verdict must
         // carry a valid signature - see JudgeRunnerClient.
         RUNNER_SECRET: Joi.string().allow('').optional(),
+        // Validate published-but-never-checked challenges (e.g. seed data)
+        // in the sandbox once a runner worker is up, so a fresh install can
+        // start matches without an admin validating each one by hand.
+        AUTO_VALIDATE_CHALLENGES: Joi.boolean().default(true),
 
         // Optional AI challenge-generation provider. When unset, the admin
         // console's AI mode reports itself as unavailable rather than

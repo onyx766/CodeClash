@@ -8,6 +8,7 @@ import { ChallengeValidationService } from './challenge-validation.service';
 import { ChallengeImportService } from './challenge-import.service';
 import { ChallengeAiService } from './challenge-ai.service';
 import { ChallengeBattlePoolService } from './battle-pool.service';
+import { ChallengePoolBootstrapService } from './challenge-pool-bootstrap.service';
 
 @Module({
   imports: [DatabaseModule, RedisModule, RunnerModule],
@@ -18,6 +19,7 @@ import { ChallengeBattlePoolService } from './battle-pool.service';
     ChallengeImportService,
     ChallengeAiService,
     ChallengeBattlePoolService,
+    ChallengePoolBootstrapService,
   ],
   exports: [AdminChallengesService],
 })
