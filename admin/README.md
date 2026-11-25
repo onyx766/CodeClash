@@ -143,4 +143,4 @@ window, for admin work.
   with a staff account. A MASTER can promote an account from the Users page.
 - **Matches cannot start**: open Challenges and check the Battle pool panel. The
   runner must be reachable and enough published challenges must have passed
-  validation; **Validate published** runs the missing checks.
+  validation; **Check unvalidated** runs the missing checks.
