@@ -47,7 +47,7 @@ function shellEscape(str) {
 console.log('x-runner-timestamp:', ts);
 console.log('x-runner-signature:', sig);
 console.log('\nExample curl:');
-console.log('curl -X POST http://localhost:3001/api/jobs/record \\');
+console.log('curl -X POST http://localhost:4000/api/jobs/record \\');
 console.log("  -H \"Content-Type: application/json\" \\");
 console.log(`  -H \"x-runner-timestamp: ${ts}\" \\");
 console.log(`  -H \"x-runner-signature: ${sig}\" \\");
