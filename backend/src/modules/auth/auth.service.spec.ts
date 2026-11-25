@@ -5,6 +5,7 @@ import { Prisma, Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { GeolocationService } from '../geolocation/geolocation.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import {
   EmailAlreadyExistsException,
   InvalidCredentialsException,
@@ -29,6 +30,7 @@ describe('AuthService', () => {
   >;
   let geolocationService: jest.Mocked<Pick<GeolocationService, 'getLocationFromIp'>>;
   let configValues: Record<string, string>;
+  let socketGateway: { disconnectUser: jest.Mock };
 
   const baseUser = {
     id: 'user-1',
@@ -48,6 +50,7 @@ describe('AuthService', () => {
       findPasswordHash: jest.fn(),
       setPassword: jest.fn(),
     };
+    socketGateway = { disconnectUser: jest.fn() };
     geolocationService = {
       getLocationFromIp: jest.fn(),
     };
@@ -64,6 +67,7 @@ describe('AuthService', () => {
         AuthService,
         { provide: UsersService, useValue: usersService },
         { provide: GeolocationService, useValue: geolocationService },
+        { provide: SocketGateway, useValue: socketGateway },
         JwtService,
         {
           provide: ConfigService,
@@ -216,6 +220,8 @@ describe('AuthService', () => {
       const iat = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1], 'base64url').toString()).iat;
       expect(iat).toBeGreaterThanOrEqual(before);
       expect(isTokenRevoked(iat, revokedAt)).toBe(false);
+      // Live sockets of every session are closed; this one reconnects.
+      expect(socketGateway.disconnectUser).toHaveBeenCalledWith('user-1');
     });
 
     it('refuses a wrong current password without changing anything', async () => {

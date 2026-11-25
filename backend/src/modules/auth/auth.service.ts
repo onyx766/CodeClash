@@ -17,6 +17,7 @@ import {
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
 import { UsersService } from '../users/users.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import { isTokenRevoked } from './session-revocation.util';
 import { GeolocationService } from '../geolocation/geolocation.service';
 import {
@@ -45,6 +46,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly geolocationService: GeolocationService,
+    private readonly socket: SocketGateway,
   ) {}
 
   async register(
@@ -196,6 +198,9 @@ export class AuthService {
       await hashPassword(newPassword),
       new Date(),
     );
+    // Close live sockets of every session; this one reconnects with the
+    // re-issued cookie, the revoked ones are refused at the handshake.
+    this.socket.disconnectUser(userId);
 
     // Issued after the revocation instant (same second at the earliest),
     // so isTokenRevoked() lets these through while older tokens are refused.
