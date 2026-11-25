@@ -14,6 +14,16 @@ const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
  * behind each other; add worker replicas to scale further.
  */
 const CONCURRENCY = Math.max(1, Math.min(Number(process.env.WORKER_CONCURRENCY) || 2, 16));
+/** CPU share per job container. Time limits are wall-clock, so keep it whole. */
+const SANDBOX_CPUS = process.env.SANDBOX_CPUS || '1';
+/**
+ * Container memory on top of the challenge's heap limit: the Node.js runtime
+ * itself needs ~40-60 MB before any player code runs, so a container sized to
+ * the bare limit could be OOM-killed while starting up.
+ */
+const SANDBOX_MEMORY_OVERHEAD_MB = Math.max(32, Number(process.env.SANDBOX_MEMORY_OVERHEAD_MB) || 96);
+/** How long an uncollected result stays in Redis (the HTTP waiter timed out). */
+const RESULT_TTL_SECONDS = 300;
 const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
 const workerId = process.env.WORKER_ID || uuidv4();
 const HEARTBEAT_TTL = Number(process.env.WORKER_HEARTBEAT_TTL || 10);
@@ -158,13 +168,15 @@ async function runJob(job: any) {
     '--read-only',
     '--tmpfs', '/tmp:rw,size=50m',
     '--user', '65534:65534',
-    '--memory', `${manifest.memoryLimitMb}m`,
-    '--memory-swap', `${manifest.memoryLimitMb}m`,
-    '--cpus', '0.5',
+    '--memory', `${manifest.memoryLimitMb + SANDBOX_MEMORY_OVERHEAD_MB}m`,
+    '--memory-swap', `${manifest.memoryLimitMb + SANDBOX_MEMORY_OVERHEAD_MB}m`,
+    '--cpus', SANDBOX_CPUS,
     '--mount', `type=bind,source=${path.posix.join(baseDir, subdir)},target=/work,readonly`,
     '-w', '/work',
     SANDBOX_IMAGE,
-    'node', `--max-old-space-size=${Math.max(16, manifest.memoryLimitMb - 32)}`, manifest.entry,
+    // The challenge's memory limit is the JavaScript heap; exceeding it aborts
+    // the runtime with a fatal OOM, reported below as MEMORY.
+    'node', `--max-old-space-size=${manifest.memoryLimitMb}`, manifest.entry,
   ];
 
   return new Promise<void>((resolve) => {
@@ -197,13 +209,16 @@ async function runJob(job: any) {
     proc.on('close', async (code) => {
       clearTimeout(killTimer);
       if (forceTimer) clearTimeout(forceTimer);
-      // 137 is SIGKILL, which for these containers means the memory cgroup
-      // limit was hit. The runtime is already gone, so the limit is reported
-      // here instead of per test.
-      const limitExceeded = timedOut ? 'TIME' : code === 137 ? 'MEMORY' : null;
+      // The runtime is gone in all of these cases, so the limit is reported
+      // here instead of per test: 137 is SIGKILL from the memory cgroup, and a
+      // heap over --max-old-space-size aborts Node with a fatal OOM (player
+      // code has no access to stderr, so the message cannot be forged).
+      const heapExhausted = /JavaScript heap out of memory|Reached heap limit/.test(out);
+      const limitExceeded = timedOut ? 'TIME' : code === 137 || heapExhausted ? 'MEMORY' : null;
       const payload = { jobId, output: out, exitCode: code, limitExceeded, metadata: metadata || null };
       try {
         await redis.lpush(`code_results:${jobId}`, JSON.stringify(payload));
+        await redis.expire(`code_results:${jobId}`, RESULT_TTL_SECONDS);
         // index recent results for dashboard (include metadata)
         try {
           await redis.lpush('code_results_index', JSON.stringify({ jobId, timestamp: Date.now(), exitCode: code, metadata: metadata || null }));
