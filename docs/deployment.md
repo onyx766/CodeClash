@@ -30,13 +30,14 @@ docker compose up --build -d   # first build takes a few minutes
 | Health        | http://localhost:4000/api/health     |
 
 On first start the API applies database migrations and seeds an empty
-database with staff accounts, demo players and ten starter challenges. It then
-validates those challenges in the sandbox automatically, which takes about ten
-seconds once the runner is up. Matches can start once that finishes:
+database with staff accounts, demo players and 17 starter challenges (6 easy,
+7 medium, 4 hard). It then validates those challenges in the sandbox
+automatically, which takes about ten seconds once the runner is up. Matches can
+start once that finishes:
 
 ```bash
 docker compose logs backend | grep ChallengePoolBootstrap
-# ... Automatic challenge validation finished: 10 passed, 0 failed, 0 errored.
+# ... Automatic challenge validation finished: 17 passed, 0 failed, 0 errored.
 ```
 
 ### Verifying a deployment
