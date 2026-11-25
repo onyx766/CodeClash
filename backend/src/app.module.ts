@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -37,6 +37,10 @@ import { AppService } from './app.service';
         // Secure attribute on auth cookies. Defaults to NODE_ENV=production;
         // set false when serving over plain HTTP (see cookie.util.ts).
         COOKIE_SECURE: Joi.boolean().optional(),
+        // Global rate limit: THROTTLE_LIMIT requests per THROTTLE_TTL_MS per
+        // client address (see TRUST_PROXY_HOPS behind a reverse proxy).
+        THROTTLE_LIMIT: Joi.number().integer().min(1).default(300),
+        THROTTLE_TTL_MS: Joi.number().integer().min(1000).default(60_000),
         GEOLOCATION_PROVIDER: Joi.string()
           .valid('ip-api', 'ipapi')
           .default('ip-api'),
@@ -112,7 +116,19 @@ import { AppService } from './app.service';
       }),
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Default per-client budget for every route (stricter limits are set per
+    // route on sign-in, sign-up and password changes). Clients poll some
+    // endpoints while a player searches or waits, and players behind one NAT
+    // share an address, so keep this comfortably above a single tab's needs.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: config.get<number>('THROTTLE_TTL_MS') ?? 60_000,
+          limit: config.get<number>('THROTTLE_LIMIT') ?? 300,
+        },
+      ],
+    }),
     // Core modules
     // Database and Redis modules provide PrismaService and RedisService
     require('./database/database.module').DatabaseModule,
