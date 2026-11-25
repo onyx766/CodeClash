@@ -39,6 +39,18 @@ docker compose logs backend | grep ChallengePoolBootstrap
 # ... Automatic challenge validation finished: 10 passed, 0 failed, 0 errored.
 ```
 
+### Verifying a deployment
+
+`scripts/smoke-test.mjs` plays a complete ranked match through the public API
+and Socket.IO. Two throwaway players find each other via Quick Match, accept,
+get judged (one wrong answer, then correct solutions) and finish, and the test
+checks the result, rating changes, history and leaderboard. It needs Node.js 22+
+and no dependencies, and reads the admin password from `.env`:
+
+```bash
+node scripts/smoke-test.mjs                      # or: --api https://api.example.com/api
+```
+
 ### Accounts
 
 `init-env.sh` prints the generated passwords and stores them in `.env`:

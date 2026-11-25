@@ -21,6 +21,8 @@ docker compose up --build -d
 
 The first start migrates and seeds the database, then validates the starter
 challenges in the sandbox. Matches can start about a minute after the stack is up.
+`node scripts/smoke-test.mjs` then plays a full ranked match end to end to
+verify the deployment.
 
 ## Documentation
 
@@ -37,4 +39,4 @@ challenges in the sandbox. Matches can start about a minute after the stack is u
 | `frontend/` | Player app (Next.js) |
 | `admin/` | Admin console (Next.js) |
 | `docker-compose.yml` | The complete stack; `docker-compose.dev.yml` exposes the databases for local development |
-| `scripts/` | `init-env.sh` (configuration), `sign-hmac.js` (sign runner requests by hand) |
+| `scripts/` | `init-env.sh` (configuration), `smoke-test.mjs` (end-to-end check of a running stack), `sign-hmac.js` (sign runner requests by hand) |
