@@ -10,9 +10,9 @@ import { useRequireAdmin } from "../../hooks/useAdminAuth";
 /**
  * Honest stand-in for a console section that has no backend behind it yet.
  *
- * The sidebar shows the full product navigation, so these routes exist to say
- * plainly that the section is not built - rather than 404, or worse, render a
- * convincing screen full of invented numbers.
+ * The sidebar lists these planned sections under "Coming soon", so the routes
+ * exist to say plainly that the section is not built - rather than 404, or
+ * worse, render a convincing screen full of invented numbers.
  */
 export function SectionPlaceholder({
   title,
@@ -55,13 +55,12 @@ export function SectionPlaceholder({
         </div>
 
         <Card className="mt-6 p-6 text-center">
-          <p className="text-[15px] font-semibold text-fg">Not built yet</p>
+          <p className="text-[15px] font-semibold text-fg">Coming soon</p>
           <p className="mx-auto mt-1.5 max-w-md text-[12.5px] leading-relaxed text-dim">
             {available ?? (
               <>
                 This section has no backend behind it yet, so there is nothing
-                real to show. It is listed here so the navigation matches the
-                product design.
+                real to show here.
               </>
             )}
           </p>

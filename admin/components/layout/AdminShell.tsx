@@ -30,6 +30,13 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: IconDashboard },
   { href: "/users", label: "Users", icon: IconUsers },
   { href: "/challenges", label: "Challenges", icon: IconTrophy },
+] as const;
+
+/**
+ * Planned sections. Each route exists and says plainly that it is not built,
+ * but they are kept apart and muted so nobody mistakes them for working tools.
+ */
+const COMING_SOON = [
   { href: "/matches", label: "Matches", icon: IconMatches },
   { href: "/rooms", label: "Rooms", icon: IconRooms },
   { href: "/submissions", label: "Submissions", icon: IconFile },
@@ -165,6 +172,30 @@ export function AdminShell({
               );
             })}
           </ul>
+
+          <p className="eyebrow mt-6 mb-1.5 px-3 text-faint">Coming soon</p>
+          <ul className="space-y-0.5">
+            {COMING_SOON.map((item) => {
+              const active = pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cx(
+                      "flex items-center gap-3 rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                      active
+                        ? "bg-panel-2 text-muted"
+                        : "text-faint hover:bg-panel-2/60 hover:text-dim",
+                    )}
+                  >
+                    <Icon size={16} />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
         <div className="border-t border-line p-3">
@@ -176,7 +207,6 @@ export function AdminShell({
             <p className="mt-1 text-[11px] leading-4 text-dim">
               Competitive coding for everyone
             </p>
-            <p className="mono mt-2 text-[10px] text-faint">v1.0.0</p>
           </div>
         </div>
       </aside>

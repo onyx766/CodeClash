@@ -6,7 +6,7 @@ export default function MatchesPage() {
     <SectionPlaceholder
       title="Matches"
       description="Monitor live matches, player activity, and results."
-      available="Matches and rounds exist in the database, but this console view has not been built yet."
+      available="Matches, their challenges and each player's progress are recorded, but this console view has not been built yet."
       icon={<IconMatches size={20} />}
     />
   );
