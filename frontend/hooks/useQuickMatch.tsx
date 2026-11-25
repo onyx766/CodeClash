@@ -180,9 +180,14 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
           update(owner, { phase: "idle", search: null });
           openMatch(matchId);
         } else {
-          // The pairing is still being saved; it shows up on the next read.
+          // The pairing is still being saved; open it once it shows up.
           update(owner, { phase: "searching" });
-          setTimeout(() => void sync(), 700);
+          setTimeout(() => {
+            matchmakingApi
+              .status()
+              .then((res) => apply(owner, res.matchmaking, true))
+              .catch(() => undefined);
+          }, 700);
         }
         return;
       }
@@ -191,7 +196,7 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
         notice: { tone: "error", text: err instanceof ApiError ? err.message : "Could not cancel the search." },
       });
     }
-  }, [apply, update, openMatch, sync]);
+  }, [apply, update, openMatch]);
 
   const dismissNotice = useCallback(() => {
     const owner = userIdRef.current;
