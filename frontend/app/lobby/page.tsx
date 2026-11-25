@@ -1,15 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogIn, PlayCircle, Plus, Users, Zap } from "lucide-react";
-import { ApiError, rooms as roomsApi } from "../../lib/api";
+import { LogIn, PlayCircle, Plus, RotateCcw, Swords, Users, X, Zap } from "lucide-react";
+import { ApiError, matches as matchesApi, rooms as roomsApi } from "../../lib/api";
+import type { MatchStatus } from "../../lib/battle";
 import AppLayout from "../../components/layout/AppLayout";
 import DashboardSidebar from "../../components/app/DashboardSidebar";
 import LobbyRail from "../../components/app/LobbyRail";
 import CreateRoomModal, { type CreateRoomOptions } from "../../components/app/CreateRoomModal";
 import MyInvitations from "../../components/app/MyInvitations";
+import QuickMatchCard from "../../components/app/QuickMatchCard";
+import useQuickMatch from "../../hooks/useQuickMatch";
+
+type ActiveMatch = { id: string; status: MatchStatus; type: "QUICK_MATCH" | "PRIVATE_ROOM" };
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -19,18 +24,22 @@ export default function LobbyPage() {
   const [joinOpen, setJoinOpen] = useState(() => Boolean(invitedCode));
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
+  const quickMatch = useQuickMatch();
+  // A match the player left (e.g. via the logo) - offer the way back.
+  const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
 
-  const create = async () => {
-    setError("");
-    try {
-      const r = await roomsApi.create(2);
-      router.push(`/rooms/${r.id}`);
-    } catch (e) {
-      setError(
-        e instanceof ApiError ? e.message : "Could not create a room. Is the backend running?",
-      );
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    matchesApi
+      .active()
+      .then((res: { match: ActiveMatch | null }) => {
+        if (!cancelled) setActiveMatch(res.match);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const createWithOptions = async ({ maxPlayers }: CreateRoomOptions) => {
     const r = await roomsApi.create(maxPlayers);
@@ -53,22 +62,6 @@ export default function LobbyPage() {
   };
 
   const cards = [
-    {
-      key: "quick",
-      icon: Zap,
-      title: "Quick Match",
-      desc: "Find an opponent of similar skill and start a battle instantly.",
-      cta: "Find Match",
-      btn: "btn-blue",
-      onClick: create,
-      ring: "from-[#101a3a] to-[#0b1020] border-blue/30",
-      badge: "from-blue to-blue-deep",
-      foot: (
-        <>
-          <span className="dot-live" /> 1,248 players online
-        </>
-      ),
-    },
     {
       key: "create",
       icon: Users,
@@ -125,7 +118,22 @@ export default function LobbyPage() {
         </Link>
       </header>
 
+      {activeMatch && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue/35 bg-blue/10 px-4 py-3">
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-blue-200">
+            <Swords size={16} />
+            {activeMatch.status === "IN_PROGRESS"
+              ? "You have a match in progress."
+              : "A match is waiting for you to accept it."}
+          </p>
+          <Link href={`/match/${activeMatch.id}`} className="btn btn-blue !px-4 !py-2 !text-[12.5px]">
+            {activeMatch.status === "IN_PROGRESS" ? "Return to match" : "Open match"}
+          </Link>
+        </div>
+      )}
+
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <QuickMatchCard />
         {cards.map((c) => (
           <div
             key={c.key}
@@ -170,6 +178,41 @@ export default function LobbyPage() {
             Join
           </button>
         </form>
+      )}
+
+      {quickMatch.notice && (
+        <div
+          role={quickMatch.notice.tone === "error" ? "alert" : "status"}
+          className={`mt-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-[12.5px] ${
+            quickMatch.notice.tone === "error"
+              ? "border-rose/30 bg-rose/10 text-rose-300"
+              : "border-blue/30 bg-blue/10 text-blue-200"
+          }`}
+        >
+          <span className="min-w-0 flex-1">{quickMatch.notice.text}</span>
+          {quickMatch.notice.action && (
+            <Link href={quickMatch.notice.action.href} className="btn btn-ghost !px-3 !py-1.5 !text-[12px]">
+              {quickMatch.notice.action.label}
+            </Link>
+          )}
+          {quickMatch.notice.retry && quickMatch.phase === "idle" && (
+            <button
+              type="button"
+              onClick={() => void quickMatch.start()}
+              className="btn btn-blue !px-3 !py-1.5 !text-[12px]"
+            >
+              <RotateCcw size={13} /> Search again
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={quickMatch.dismissNotice}
+            aria-label="Dismiss"
+            className="rounded-md p-1 opacity-70 hover:opacity-100"
+          >
+            <X size={14} />
+          </button>
+        </div>
       )}
 
       {error && (
