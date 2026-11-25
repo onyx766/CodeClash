@@ -265,9 +265,6 @@ async function loop() {
     // eslint-disable-next-line no-console
     console.log(`Worker health server listening on ${healthPort}`);
   });
-  // start heartbeat registration
-  startHeartbeat().catch((e) => console.error('heartbeat failed', e));
-
   // cleanup on exit
   const shutdown = async () => {
     try { await redis.del(`runner:worker:${workerId}`); } catch (e) {}
@@ -294,6 +291,9 @@ async function loop() {
   await waitForDocker();
   await sweepOrphanedContainers();
   await ensureSandboxImage();
+  // Register only once jobs can actually run: the API treats a registered
+  // worker as "ready" (e.g. before validating challenges at startup).
+  startHeartbeat().catch((e) => console.error('heartbeat failed', e));
   while (true) {
     try {
       const jobRaw = await redis.brpoplpush('code_jobs', 'code_jobs:processing', 0);
