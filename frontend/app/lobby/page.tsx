@@ -9,7 +9,7 @@ import type { MatchStatus } from "../../lib/battle";
 import AppLayout from "../../components/layout/AppLayout";
 import DashboardSidebar from "../../components/app/DashboardSidebar";
 import LobbyRail from "../../components/app/LobbyRail";
-import CreateRoomModal, { type CreateRoomOptions } from "../../components/app/CreateRoomModal";
+import CreateRoomModal from "../../components/app/CreateRoomModal";
 import MyInvitations from "../../components/app/MyInvitations";
 import QuickMatchCard from "../../components/app/QuickMatchCard";
 import useQuickMatch from "../../hooks/useQuickMatch";
@@ -41,8 +41,8 @@ export default function LobbyPage() {
     };
   }, []);
 
-  const createWithOptions = async ({ maxPlayers }: CreateRoomOptions) => {
-    const r = await roomsApi.create(maxPlayers);
+  const createRoom = async () => {
+    const r = await roomsApi.create();
     setCreateOpen(false);
     router.push(`/rooms/${r.id}`);
   };
@@ -103,7 +103,7 @@ export default function LobbyPage() {
       <CreateRoomModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreate={createWithOptions}
+        onCreate={createRoom}
       />
 
       <header className="flex flex-wrap items-start justify-between gap-4">

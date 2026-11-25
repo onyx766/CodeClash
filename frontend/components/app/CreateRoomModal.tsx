@@ -1,11 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Clock, Gamepad2, Info, Lock, Users, X } from "lucide-react";
-
-export type CreateRoomOptions = {
-  maxPlayers: number;
-};
+import { Clock, Gamepad2, Lock, Swords, Users, X } from "lucide-react";
 
 export default function CreateRoomModal({
   open,
@@ -14,12 +10,8 @@ export default function CreateRoomModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (opts: CreateRoomOptions) => Promise<void>;
+  onCreate: () => Promise<void>;
 }) {
-  const [maxPlayers, setMaxPlayers] = useState(2);
-  const [minRating, setMinRating] = useState("");
-  const [maxRating, setMaxRating] = useState("");
-  const [expiration, setExpiration] = useState("30");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +21,7 @@ export default function CreateRoomModal({
     setError("");
     setSubmitting(true);
     try {
-      await onCreate({ maxPlayers });
+      await onCreate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create a room.");
     } finally {
@@ -107,93 +99,15 @@ export default function CreateRoomModal({
           </div>
         </div>
 
-        <div className="mt-5">
-          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted" htmlFor="player-limit">
-            Player Limit
-          </label>
-          <div className="relative">
-            <Users size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
-            <select
-              id="player-limit"
-              value={maxPlayers}
-              onChange={(e) => setMaxPlayers(Number(e.target.value))}
-              className="field appearance-none pl-9 pr-9"
-            >
-              <option value={2}>2 players (1v1)</option>
-              <option value={3}>3 players</option>
-              <option value={4}>4 players</option>
-            </select>
-            <ChevronDown
-              size={15}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
-            />
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-muted">
-            Rating Range (Optional)
-            <Info size={13} className="text-dim" />
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-[11px] text-dim" htmlFor="min-rating">
-                Minimum Rating
-              </label>
-              <input
-                id="min-rating"
-                type="number"
-                inputMode="numeric"
-                placeholder="Any (no limit)"
-                value={minRating}
-                onChange={(e) => setMinRating(e.target.value)}
-                className="field"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-[11px] text-dim" htmlFor="max-rating">
-                Maximum Rating
-              </label>
-              <input
-                id="max-rating"
-                type="number"
-                inputMode="numeric"
-                placeholder="Any (no limit)"
-                value={maxRating}
-                onChange={(e) => setMaxRating(e.target.value)}
-                className="field"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-muted">
-            Room Expiration
-            <Info size={13} className="text-dim" />
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative sm:w-[220px]">
-              <Clock size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
-              <select
-                value={expiration}
-                onChange={(e) => setExpiration(e.target.value)}
-                className="field appearance-none pl-9 pr-9"
-              >
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="60">1 hour</option>
-              </select>
-              <ChevronDown
-                size={15}
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-dim"
-              />
-            </div>
-            <p className="text-[11.5px] text-dim">
-              Room will be automatically closed if no one joins.
-            </p>
-          </div>
-        </div>
+        {/* Battles are strictly 1v1 and the API decides the rest: no options to pick. */}
+        <ul className="mt-5 space-y-2.5 text-[12.5px] text-muted">
+          <li className="flex items-center gap-2.5">
+            <Swords size={15} className="shrink-0 text-dim" /> 1v1 battle - you and one invited opponent.
+          </li>
+          <li className="flex items-center gap-2.5">
+            <Clock size={15} className="shrink-0 text-dim" /> The room closes automatically if nobody joins in time.
+          </li>
+        </ul>
 
         {error && (
           <p className="mt-5 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">

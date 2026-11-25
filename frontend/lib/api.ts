@@ -190,7 +190,8 @@ export const auth = {
 };
 
 export const rooms = {
-  create: (maxPlayers = 2) => request('POST', '/rooms', { maxPlayers }),
+  // Battles are 1v1: a private room always seats exactly two players.
+  create: () => request('POST', '/rooms', { maxPlayers: 2 }),
   join: (code: string) => request('POST', '/rooms/join', { code }),
   get: (id: string) => request('GET', `/rooms/${id}`),
   leave: (id: string) => request('POST', `/rooms/${id}/leave`),
