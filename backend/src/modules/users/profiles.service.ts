@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { RANKED_PLAYERS } from '../leaderboard/ranked-players';
 import {
   ProfileNotFoundException,
   UsernameNotFoundException,
 } from '../../common/exceptions/app.exception';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { MyProfileResponse, PublicProfileResponse } from './types/profile.types';
+import {
+  MyProfileResponse,
+  PublicProfileResponse,
+} from './types/profile.types';
 
 const PROFILE_INCLUDE = {
   profile: true,
@@ -167,15 +170,17 @@ export class ProfilesService {
   }
 
   /**
-   * 1-based position among ranked players - the same population as the
-   * leaderboard (active USER accounts), so staff and banned accounts do not
-   * push players down.
+   * 1 + the number of ranked players rated strictly higher: standard
+   * competition ranking over the leaderboard's population (RANKED_PLAYERS),
+   * so players with the same rating share a rank and the profile always shows
+   * the rank the leaderboard does. Staff and banned accounts do not push
+   * players down.
    */
   private async getGlobalRank(rating: number): Promise<number> {
     const higherRated = await this.prisma.userStats.count({
       where: {
         rating: { gt: rating },
-        user: { role: Role.USER, status: UserStatus.ACTIVE },
+        user: RANKED_PLAYERS,
       },
     });
     return higherRated + 1;
