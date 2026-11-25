@@ -12,6 +12,7 @@ import { roleAtLeast } from '../common/constants/role-hierarchy';
 import { touchLastSeen } from '../modules/matchmaking/matchmaking.redis';
 import { loadMatchmakingConfig } from '../modules/matchmaking/matchmaking.constants';
 import { isTokenRevoked } from '../modules/auth/session-revocation.util';
+import { withCasualMetadata } from '../modules/rooms/room-metadata.util';
 
 /** Room ready flags live as long as the room's player set (see RoomsService). */
 const ROOM_READY_TTL_SECONDS = 60 * 60 * 24;
@@ -57,6 +58,16 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   emitToUser(userId: string, event: string, payload: unknown) {
     this.server.to(`user:${userId}`).emit(event, payload);
+  }
+
+  /**
+   * Drops every open socket of one user. Sockets are authenticated only at
+   * handshake, so after a ban or a password change (which revokes sessions)
+   * live connections must be closed for the new state to apply; clients that
+   * still hold a valid session simply reconnect.
+   */
+  disconnectUser(userId: string) {
+    this.server?.in(`user:${userId}`).disconnectSockets(true);
   }
 
   /** Push to every socket that passed onMatchJoin's membership check. */
@@ -233,6 +244,8 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       include: ROOM_SNAPSHOT_INCLUDE,
     });
     const ready = await this.redis.getClient().hgetall(`room:${roomId}:ready`);
-    this.server.to(`room:${roomId}`).emit(SocketEvents.ROOM_UPDATE, { room, ready });
+    this.server
+      .to(`room:${roomId}`)
+      .emit(SocketEvents.ROOM_UPDATE, { room: room ? withCasualMetadata(room) : null, ready });
   }
 }

@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { SocketGateway } from '../../socket/socket.gateway';
 import { SocketEvents } from '../../socket/socket.events';
+import { withCasualMetadata } from './room-metadata.util';
 import { dequeue, getQueueEntry } from '../matchmaking/matchmaking.redis';
 import {
   MatchAlreadyStartedException,
@@ -23,21 +24,6 @@ function makeCode(len = 6) {
   return out;
 }
 
-/**
- * Every room today is created by a host and joined by code - i.e. a private
- * room. This metadata is presentation-only (not persisted) and always says
- * casual/not-rating-eligible, independent of whatever the Match/RatingService
- * layers separately enforce - see the anti-rigging plan.
- */
-function withCasualMetadata<T>(room: T) {
-  return {
-    ...room,
-    type: 'PRIVATE_ROOM' as const,
-    mode: 'CASUAL' as const,
-    ratingEligible: false,
-    ratingMessage: 'Private room matches do not affect rating.',
-  };
-}
 
 @Injectable()
 export class RoomsService {
