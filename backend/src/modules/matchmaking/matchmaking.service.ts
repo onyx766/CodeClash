@@ -239,6 +239,9 @@ export class MatchmakingService {
       if (await isStale(client, userId)) {
         await dequeue(client, userId);
         this.logger.log(`Removed stale Quick Match queue entry for user ${userId}`);
+        // Tell any tab still showing "Searching..." that it was dropped, so it
+        // can stop or re-enqueue instead of waiting forever.
+        this.emitToUser(userId, SocketEvents.MATCHMAKING_CANCELLED, { reason: 'STALE' });
       }
     }
   }

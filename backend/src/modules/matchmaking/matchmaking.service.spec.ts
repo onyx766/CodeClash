@@ -556,8 +556,8 @@ describe('MatchmakingService', () => {
   });
 
   describe('sweepStaleQueueEntries', () => {
-    it('removes queue entries with no recent heartbeat', async () => {
-      const { service, redis } = await buildService();
+    it('removes queue entries with no recent heartbeat and tells the user', async () => {
+      const { service, redis, emit } = await buildService();
       await redis.zadd(MATCHMAKING_RATING_ZSET, 1500, 'stale-user');
       await redis.zadd(MATCHMAKING_JOINED_ZSET, Date.now(), 'stale-user');
       // No lastseen key set for stale-user - simulates a dropped connection
@@ -566,6 +566,7 @@ describe('MatchmakingService', () => {
       await service.sweepStaleQueueEntries();
 
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'stale-user')).toBeNull();
+      expect(emit).toHaveBeenCalledWith('matchmaking:cancelled', { reason: 'STALE' });
     });
 
     it('keeps queue entries with a fresh heartbeat', async () => {
@@ -577,6 +578,17 @@ describe('MatchmakingService', () => {
       await service.sweepStaleQueueEntries();
 
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'fresh-user')).toBe('1500');
+    });
+
+    it('does not notify users whose entry is fresh', async () => {
+      const { service, redis, emit } = await buildService();
+      await redis.zadd(MATCHMAKING_RATING_ZSET, 1500, 'fresh-user');
+      await redis.zadd(MATCHMAKING_JOINED_ZSET, Date.now(), 'fresh-user');
+      await redis.set('matchmaking:quick:lastseen:fresh-user', '1', 'PX', 10_000);
+
+      await service.sweepStaleQueueEntries();
+
+      expect(emit).not.toHaveBeenCalled();
     });
   });
 });
