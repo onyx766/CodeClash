@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogIn, PlayCircle, Plus, RotateCcw, Swords, Users, X, Zap } from "lucide-react";
-import { ApiError, matches as matchesApi, rooms as roomsApi } from "../../lib/api";
-import type { MatchStatus } from "../../lib/battle";
+import { ApiError, rooms as roomsApi } from "../../lib/api";
 import AppLayout from "../../components/layout/AppLayout";
 import DashboardSidebar from "../../components/app/DashboardSidebar";
 import LobbyRail from "../../components/app/LobbyRail";
 import CreateRoomModal from "../../components/app/CreateRoomModal";
 import MyInvitations from "../../components/app/MyInvitations";
 import QuickMatchCard from "../../components/app/QuickMatchCard";
+import useActiveMatch from "../../hooks/useActiveMatch";
+import useAuth from "../../hooks/useAuth";
+import useProfile from "../../hooks/useProfile";
 import useQuickMatch from "../../hooks/useQuickMatch";
 import useSearchParam from "../../hooks/useSearchParam";
-
-type ActiveMatch = { id: string; status: MatchStatus; type: "QUICK_MATCH" | "PRIVATE_ROOM" };
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -31,21 +31,25 @@ export default function LobbyPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState("");
   const quickMatch = useQuickMatch();
-  // A match the player left (e.g. via the logo) - offer the way back.
-  const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
+  const { refreshActiveRoom } = useAuth();
+  const { refetch: refetchProfile } = useProfile();
+  // Bumped when a match ends, so Recent Activity re-reads the history.
+  const [historyVersion, setHistoryVersion] = useState(0);
 
+  // Stats change with every finished match: never show the ones cached
+  // from before the last game.
   useEffect(() => {
-    let cancelled = false;
-    matchesApi
-      .active()
-      .then((res: { match: ActiveMatch | null }) => {
-        if (!cancelled) setActiveMatch(res.match);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void refetchProfile();
+  }, [refetchProfile]);
+
+  // A match the player left (e.g. via the logo) - offer the way back, and
+  // pick up its result if it ends while they are here.
+  const onMatchEnded = useCallback(() => {
+    void refetchProfile();
+    void refreshActiveRoom();
+    setHistoryVersion((n) => n + 1);
+  }, [refetchProfile, refreshActiveRoom]);
+  const activeMatch = useActiveMatch(onMatchEnded);
 
   const createRoom = async () => {
     const r = await roomsApi.create();
@@ -105,7 +109,7 @@ export default function LobbyPage() {
   ];
 
   return (
-    <AppLayout sidebar={<DashboardSidebar />} rail={<LobbyRail />}>
+    <AppLayout sidebar={<DashboardSidebar />} rail={<LobbyRail key={historyVersion} />}>
       <CreateRoomModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}

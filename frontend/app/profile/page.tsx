@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Calendar, Code2, Flame, Gem, Globe2, MapPin, PencilLine, Swords, Trophy } from "lucide-react";
 import AppLayout from "../../components/layout/AppLayout";
 import MainSidebar from "../../components/app/MainSidebar";
@@ -10,6 +10,7 @@ import EditProfileModal from "../../components/profile/EditProfileModal";
 import MatchHistoryPanel from "../../components/profile/MatchHistoryPanel";
 import RecordsPanel from "../../components/profile/RecordsPanel";
 import { Avatar, IconBadge, Tag, avatarForUserId } from "../../components/ui/Bits";
+import useActiveMatch from "../../hooks/useActiveMatch";
 import useAuth from "../../hooks/useAuth";
 import useProfile from "../../hooks/useProfile";
 
@@ -28,8 +29,21 @@ function formatJoined(iso?: string) {
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const { profileUser, stats } = useProfile();
+  const { profileUser, stats, refetch } = useProfile();
   const [editing, setEditing] = useState(false);
+  // Bumped when a match ends while the page is open, to reload the history.
+  const [historyVersion, setHistoryVersion] = useState(0);
+
+  // The provider's copy may predate the player's last match.
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  const onMatchEnded = useCallback(() => {
+    void refetch();
+    setHistoryVersion((n) => n + 1);
+  }, [refetch]);
+  useActiveMatch(onMatchEnded);
 
   const displayName = profileUser?.displayName || user?.username || "";
   const avatarSrc = profileUser?.avatarUrl || avatarForUserId(user?.id ?? "guest");
@@ -125,7 +139,7 @@ export default function ProfilePage() {
 
       <RecordsPanel stats={stats} />
 
-      <MatchHistoryPanel />
+      <MatchHistoryPanel refreshKey={historyVersion} />
     </AppLayout>
   );
 }
