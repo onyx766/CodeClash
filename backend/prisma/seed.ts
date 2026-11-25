@@ -89,7 +89,8 @@ async function main() {
 
   // A battle plays MATCH_CHALLENGE_COUNT (5) distinct challenges, preferring
   // 2 EASY / 2 MEDIUM / 1 HARD, so keep at least that many eligible ones here -
-  // otherwise a match refuses to start with INSUFFICIENT_BATTLE_CHALLENGES.
+  // otherwise a match refuses to start with INSUFFICIENT_BATTLE_CHALLENGES -
+  // and several of each so repeated matches do not replay the same set.
   // Every challenge needs at least one hidden test to be eligible.
   //
   // These are seeded with validationStatus NOT_CHECKED (see below), and battles
@@ -404,6 +405,273 @@ async function main() {
         { input: { height: [1, 2, 3] }, expectedOutput: 0, isHidden: true },
         { input: { height: [3, 0, 3] }, expectedOutput: 3, isHidden: true },
         { input: { height: [5, 4, 1, 2] }, expectedOutput: 1, isHidden: true },
+      ],
+    },
+    {
+      title: 'Product of Array Except Self',
+      slug: 'product-of-array-except-self',
+      description:
+        'Given an array `nums`, return an array where element `i` is the product of every element of `nums` except `nums[i]`.\n\nSolve it without using division.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [{ name: 'nums', type: 'number[]' }],
+      returnType: 'number[]',
+      starterCode: 'function solve(nums) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'DEEP_EQUAL',
+      referenceSolutionCode:
+        'function solve(nums) {\n' +
+        '  const result = new Array(nums.length).fill(1);\n' +
+        '  let prefix = 1;\n' +
+        '  for (let i = 0; i < nums.length; i++) {\n' +
+        '    result[i] = prefix;\n' +
+        '    prefix *= nums[i];\n' +
+        '  }\n' +
+        '  let suffix = 1;\n' +
+        '  for (let i = nums.length - 1; i >= 0; i--) {\n' +
+        '    result[i] *= suffix;\n' +
+        '    suffix *= nums[i];\n' +
+        '  }\n' +
+        '  return result.map((value) => value + 0);\n' +
+        '}\n',
+      tags: ['array', 'prefix-sum'],
+      testCases: [
+        { input: { nums: [1, 2, 3, 4] }, expectedOutput: [24, 12, 8, 6], isHidden: false },
+        { input: { nums: [-1, 1, 0, -3, 3] }, expectedOutput: [0, 0, 9, 0, 0], isHidden: false },
+        { input: { nums: [2, 3] }, expectedOutput: [3, 2], isHidden: true },
+        { input: { nums: [0, 0] }, expectedOutput: [0, 0], isHidden: true },
+        { input: { nums: [5, 1, 1, 1] }, expectedOutput: [1, 5, 5, 5], isHidden: true },
+        { input: { nums: [3, -2, 4, 1] }, expectedOutput: [-8, 12, -6, -24], isHidden: true },
+      ],
+    },
+    {
+      title: 'Merge Intervals',
+      slug: 'merge-intervals',
+      description:
+        'Given an array of intervals `[start, end]`, merge every pair of overlapping intervals and return the merged intervals sorted by start.\n\nIntervals that touch (one ends where the next starts) count as overlapping.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [{ name: 'intervals', type: 'array' }],
+      returnType: 'array',
+      starterCode: 'function solve(intervals) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'DEEP_EQUAL',
+      referenceSolutionCode:
+        'function solve(intervals) {\n' +
+        '  const sorted = intervals.map((i) => [i[0], i[1]]).sort((a, b) => a[0] - b[0]);\n' +
+        '  const merged = [];\n' +
+        '  for (const [start, end] of sorted) {\n' +
+        '    const last = merged[merged.length - 1];\n' +
+        '    if (last && start <= last[1]) last[1] = Math.max(last[1], end);\n' +
+        '    else merged.push([start, end]);\n' +
+        '  }\n' +
+        '  return merged;\n' +
+        '}\n',
+      tags: ['array', 'sorting'],
+      testCases: [
+        { input: { intervals: [[1, 3], [2, 6], [8, 10], [15, 18]] }, expectedOutput: [[1, 6], [8, 10], [15, 18]], isHidden: false },
+        { input: { intervals: [[1, 4], [4, 5]] }, expectedOutput: [[1, 5]], isHidden: false },
+        { input: { intervals: [] }, expectedOutput: [], isHidden: true },
+        { input: { intervals: [[1, 4], [0, 4]] }, expectedOutput: [[0, 4]], isHidden: true },
+        { input: { intervals: [[1, 4], [2, 3]] }, expectedOutput: [[1, 4]], isHidden: true },
+        { input: { intervals: [[5, 6], [1, 2], [3, 4]] }, expectedOutput: [[1, 2], [3, 4], [5, 6]], isHidden: true },
+      ],
+    },
+    {
+      title: 'Coin Change',
+      slug: 'coin-change',
+      description:
+        'Given coin denominations `coins` (an unlimited supply of each) and a target `amount`, return the fewest coins that add up to `amount`, or `-1` if it cannot be made.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [
+        { name: 'coins', type: 'number[]' },
+        { name: 'amount', type: 'number' },
+      ],
+      returnType: 'number',
+      starterCode: 'function solve(coins, amount) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(coins, amount) {\n' +
+        '  const best = new Array(amount + 1).fill(Infinity);\n' +
+        '  best[0] = 0;\n' +
+        '  for (let total = 1; total <= amount; total++) {\n' +
+        '    for (const coin of coins) {\n' +
+        '      if (coin <= total && best[total - coin] + 1 < best[total]) best[total] = best[total - coin] + 1;\n' +
+        '    }\n' +
+        '  }\n' +
+        '  return best[amount] === Infinity ? -1 : best[amount];\n' +
+        '}\n',
+      tags: ['dynamic-programming'],
+      testCases: [
+        { input: { coins: [1, 2, 5], amount: 11 }, expectedOutput: 3, isHidden: false },
+        { input: { coins: [2], amount: 3 }, expectedOutput: -1, isHidden: false },
+        { input: { coins: [1], amount: 0 }, expectedOutput: 0, isHidden: true },
+        { input: { coins: [1], amount: 2 }, expectedOutput: 2, isHidden: true },
+        { input: { coins: [186, 419, 83, 408], amount: 6249 }, expectedOutput: 20, isHidden: true },
+        { input: { coins: [2, 5, 10, 1], amount: 27 }, expectedOutput: 4, isHidden: true },
+      ],
+    },
+    {
+      title: 'Spiral Matrix',
+      slug: 'spiral-matrix',
+      description:
+        'Given an `m x n` matrix, return all of its elements in spiral order: along the top row, down the right column, back along the bottom row, up the left column, and so on inwards.',
+      difficulty: 'MEDIUM',
+      functionName: 'solve',
+      parameters: [{ name: 'matrix', type: 'array' }],
+      returnType: 'number[]',
+      starterCode: 'function solve(matrix) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'DEEP_EQUAL',
+      referenceSolutionCode:
+        'function solve(matrix) {\n' +
+        '  const result = [];\n' +
+        '  if (!matrix.length) return result;\n' +
+        '  let top = 0, bottom = matrix.length - 1, left = 0, right = matrix[0].length - 1;\n' +
+        '  while (top <= bottom && left <= right) {\n' +
+        '    for (let c = left; c <= right; c++) result.push(matrix[top][c]);\n' +
+        '    top++;\n' +
+        '    for (let r = top; r <= bottom; r++) result.push(matrix[r][right]);\n' +
+        '    right--;\n' +
+        '    if (top <= bottom) {\n' +
+        '      for (let c = right; c >= left; c--) result.push(matrix[bottom][c]);\n' +
+        '      bottom--;\n' +
+        '    }\n' +
+        '    if (left <= right) {\n' +
+        '      for (let r = bottom; r >= top; r--) result.push(matrix[r][left]);\n' +
+        '      left++;\n' +
+        '    }\n' +
+        '  }\n' +
+        '  return result;\n' +
+        '}\n',
+      tags: ['array', 'matrix', 'simulation'],
+      testCases: [
+        { input: { matrix: [[1, 2, 3], [4, 5, 6], [7, 8, 9]] }, expectedOutput: [1, 2, 3, 6, 9, 8, 7, 4, 5], isHidden: false },
+        { input: { matrix: [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]] }, expectedOutput: [1, 2, 3, 4, 8, 12, 11, 10, 9, 5, 6, 7], isHidden: false },
+        { input: { matrix: [] }, expectedOutput: [], isHidden: true },
+        { input: { matrix: [[7]] }, expectedOutput: [7], isHidden: true },
+        { input: { matrix: [[1], [2], [3]] }, expectedOutput: [1, 2, 3], isHidden: true },
+        { input: { matrix: [[1, 2], [3, 4]] }, expectedOutput: [1, 2, 4, 3], isHidden: true },
+      ],
+    },
+    {
+      title: 'Edit Distance',
+      slug: 'edit-distance',
+      description:
+        'Return the minimum number of single-character edits (insert, delete or replace) needed to turn `word1` into `word2`.',
+      difficulty: 'HARD',
+      functionName: 'solve',
+      parameters: [
+        { name: 'word1', type: 'string' },
+        { name: 'word2', type: 'string' },
+      ],
+      returnType: 'number',
+      starterCode: 'function solve(word1, word2) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(word1, word2) {\n' +
+        '  let previous = Array.from({ length: word2.length + 1 }, (_, j) => j);\n' +
+        '  for (let i = 1; i <= word1.length; i++) {\n' +
+        '    const current = [i];\n' +
+        '    for (let j = 1; j <= word2.length; j++) {\n' +
+        '      current[j] = word1[i - 1] === word2[j - 1]\n' +
+        '        ? previous[j - 1]\n' +
+        '        : 1 + Math.min(previous[j - 1], previous[j], current[j - 1]);\n' +
+        '    }\n' +
+        '    previous = current;\n' +
+        '  }\n' +
+        '  return previous[word2.length];\n' +
+        '}\n',
+      tags: ['string', 'dynamic-programming'],
+      testCases: [
+        { input: { word1: 'horse', word2: 'ros' }, expectedOutput: 3, isHidden: false },
+        { input: { word1: 'intention', word2: 'execution' }, expectedOutput: 5, isHidden: false },
+        { input: { word1: '', word2: '' }, expectedOutput: 0, isHidden: true },
+        { input: { word1: '', word2: 'abc' }, expectedOutput: 3, isHidden: true },
+        { input: { word1: 'abc', word2: 'abc' }, expectedOutput: 0, isHidden: true },
+        { input: { word1: 'kitten', word2: 'sitting' }, expectedOutput: 3, isHidden: true },
+        { input: { word1: 'sunday', word2: 'saturday' }, expectedOutput: 3, isHidden: true },
+      ],
+    },
+    {
+      title: 'Largest Rectangle in Histogram',
+      slug: 'largest-rectangle-in-histogram',
+      description:
+        'Given the bar heights of a histogram where every bar has width 1, return the area of the largest rectangle that fits inside the histogram.',
+      difficulty: 'HARD',
+      functionName: 'solve',
+      parameters: [{ name: 'heights', type: 'number[]' }],
+      returnType: 'number',
+      starterCode: 'function solve(heights) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(heights) {\n' +
+        '  const stack = [];\n' +
+        '  let best = 0;\n' +
+        '  for (let i = 0; i <= heights.length; i++) {\n' +
+        '    const height = i === heights.length ? 0 : heights[i];\n' +
+        '    while (stack.length && heights[stack[stack.length - 1]] >= height) {\n' +
+        '      const top = heights[stack.pop()];\n' +
+        '      const left = stack.length ? stack[stack.length - 1] + 1 : 0;\n' +
+        '      best = Math.max(best, top * (i - left));\n' +
+        '    }\n' +
+        '    stack.push(i);\n' +
+        '  }\n' +
+        '  return best;\n' +
+        '}\n',
+      tags: ['array', 'stack'],
+      testCases: [
+        { input: { heights: [2, 1, 5, 6, 2, 3] }, expectedOutput: 10, isHidden: false },
+        { input: { heights: [2, 4] }, expectedOutput: 4, isHidden: false },
+        { input: { heights: [] }, expectedOutput: 0, isHidden: true },
+        { input: { heights: [1] }, expectedOutput: 1, isHidden: true },
+        { input: { heights: [2, 2, 2, 2] }, expectedOutput: 8, isHidden: true },
+        { input: { heights: [6, 2, 5, 4, 5, 1, 6] }, expectedOutput: 12, isHidden: true },
+        { input: { heights: [1, 2, 3, 4, 5] }, expectedOutput: 9, isHidden: true },
+      ],
+    },
+    {
+      title: 'N-Queens Count',
+      slug: 'n-queens-count',
+      description:
+        'Return how many ways `n` queens can be placed on an `n x n` chessboard so that no two queens attack each other (no shared row, column or diagonal).',
+      difficulty: 'HARD',
+      functionName: 'solve',
+      parameters: [{ name: 'n', type: 'number' }],
+      returnType: 'number',
+      starterCode: 'function solve(n) {\n  // Write your solution here\n}\n',
+      judgeMethod: 'EXACT',
+      referenceSolutionCode:
+        'function solve(n) {\n' +
+        '  let count = 0;\n' +
+        '  const columns = new Set();\n' +
+        '  const diagonals = new Set();\n' +
+        '  const antiDiagonals = new Set();\n' +
+        '  function place(row) {\n' +
+        '    if (row === n) {\n' +
+        '      count++;\n' +
+        '      return;\n' +
+        '    }\n' +
+        '    for (let col = 0; col < n; col++) {\n' +
+        '      if (columns.has(col) || diagonals.has(row - col) || antiDiagonals.has(row + col)) continue;\n' +
+        '      columns.add(col);\n' +
+        '      diagonals.add(row - col);\n' +
+        '      antiDiagonals.add(row + col);\n' +
+        '      place(row + 1);\n' +
+        '      columns.delete(col);\n' +
+        '      diagonals.delete(row - col);\n' +
+        '      antiDiagonals.delete(row + col);\n' +
+        '    }\n' +
+        '  }\n' +
+        '  place(0);\n' +
+        '  return count;\n' +
+        '}\n',
+      tags: ['backtracking'],
+      testCases: [
+        { input: { n: 4 }, expectedOutput: 2, isHidden: false },
+        { input: { n: 1 }, expectedOutput: 1, isHidden: false },
+        { input: { n: 2 }, expectedOutput: 0, isHidden: true },
+        { input: { n: 3 }, expectedOutput: 0, isHidden: true },
+        { input: { n: 6 }, expectedOutput: 4, isHidden: true },
+        { input: { n: 8 }, expectedOutput: 92, isHidden: true },
       ],
     },
   ];
