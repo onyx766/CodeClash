@@ -372,6 +372,50 @@ describe('Five-challenge battle engine', () => {
       expect(h.match(match.id).expiresAt).toBeInstanceOf(Date);
     });
 
+    it('shows the ready check - deadline and who accepted - only while the match waits on it', async () => {
+      const h = harness();
+      seedPlayers(h.prisma);
+      const readyDeadline = new Date(Date.now() + 10_000);
+      const [match] = h.prisma.seed('match', [
+        { type: 'QUICK_MATCH', status: 'PENDING_READY', ratingEligible: true, readyDeadline },
+      ]);
+      h.prisma.seed('matchParticipant', [
+        { matchId: match.id, userId: RYAN, ratingBefore: 1850, readyAt: new Date() },
+        { matchId: match.id, userId: MASTER1, ratingBefore: 1720 },
+      ]);
+
+      const ryan = await h.matches.getMatch(match.id, PLAYER(RYAN));
+      expect(ryan.match.readyDeadline).toEqual(readyDeadline);
+      expect(ryan.match.me).toMatchObject({ id: RYAN, ready: true });
+      expect(ryan.match.opponent).toMatchObject({ id: MASTER1, ready: false });
+      const master = await h.matches.getMatch(match.id, PLAYER(MASTER1));
+      expect(master.match.me).toMatchObject({ id: MASTER1, ready: false });
+      expect(master.match.opponent).toMatchObject({ id: RYAN, ready: true });
+
+      // Both accepted, start in flight: still part of the ready check.
+      h.prisma.rows('matchParticipant').forEach((p) => (p.readyAt = new Date()));
+      h.match(match.id).status = 'READY';
+      const ready = await h.matches.getMatch(match.id, PLAYER(RYAN));
+      expect(ready.match.readyDeadline).toEqual(readyDeadline);
+      expect([ready.match.me!.ready, ready.match.opponent!.ready]).toEqual([true, true]);
+
+      for (const status of ['IN_PROGRESS', 'CANCELLED']) {
+        h.match(match.id).status = status;
+        const view = await h.matches.getMatch(match.id, PLAYER(RYAN));
+        expect(view.match.readyDeadline).toBeNull();
+      }
+    });
+
+    it('has no ready check for a private-room match', async () => {
+      const h = harness();
+      const { matchId } = await startPrivateBattle(h);
+
+      const view = await h.matches.getMatch(matchId, PLAYER(RYAN));
+
+      expect(view.match.readyDeadline).toBeNull();
+      expect([view.match.me!.ready, view.match.opponent!.ready]).toEqual([false, false]);
+    });
+
     it('cancels (unrated) instead of starting a broken match when the pool is too small', async () => {
       const h = harness();
       const match = seedReadyQuickMatch(h);

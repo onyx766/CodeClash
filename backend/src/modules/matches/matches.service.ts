@@ -341,8 +341,9 @@ export class MatchesService {
    * and above may view any match as a spectator.
    *
    * Exposes challenge titles/difficulties, both players' statuses and solve
-   * times, and the viewer's own attempts. Never source code, test data,
-   * reference solutions, checkers or generators.
+   * times, the viewer's own attempts and, while a Quick Match waits on its
+   * ready check, the deadline and who has accepted. Never source code, test
+   * data, reference solutions, checkers or generators.
    */
   async getMatch(matchId: string, viewer: MatchViewer) {
     const match = await this.prisma.match.findUnique({
@@ -381,8 +382,15 @@ export class MatchesService {
         total,
         totalSolveDurationMs: solved.reduce((sum, row) => sum + (row.solveDurationMs ?? 0), 0),
         gaveUp: !!p.gaveUpAt,
+        // Quick Match ready check: this player has accepted.
+        ready: !!p.readyAt,
       };
     };
+    // Only while the ready check is what the match is waiting on - a later
+    // refresh must not show a deadline for a match that started or ended.
+    const awaitingReady =
+      match.type === MatchType.QUICK_MATCH &&
+      (match.status === MatchStatus.PENDING_READY || match.status === MatchStatus.READY);
 
     return {
       success: true,
@@ -399,6 +407,7 @@ export class MatchesService {
         finishReason: match.finishReason,
         resultType: match.resultType,
         winnerId: match.winnerId,
+        readyDeadline: awaitingReady ? match.readyDeadline : null,
         // Lets the client correct for its own clock skew in the countdown.
         serverTime: new Date(),
         viewer: isParticipant ? 'PARTICIPANT' : 'SPECTATOR',
