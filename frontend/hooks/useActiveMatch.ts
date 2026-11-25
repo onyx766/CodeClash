@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { matches as matchesApi } from "../lib/api";
 import type { MatchStatus } from "../lib/battle";
+import { requestOrder } from "../lib/requestOrder";
 import { joinChannel, onEveryConnect } from "../lib/socket";
 import useSocket from "./useSocket";
 
@@ -24,14 +25,19 @@ export default function useActiveMatch(onEnded?: () => void): ActiveMatch | null
     onEndedRef.current = onEnded;
   }, [onEnded]);
 
-  const reload = useCallback(
-    () =>
-      matchesApi.active().then(
-        (res: { match: ActiveMatch | null }) => setMatch(res?.match ?? null),
-        () => undefined, // keep what we have; the next event or visit re-reads it
-      ),
-    [],
-  );
+  // The first load, socket events and reconnects all re-read the match, and
+  // the answers can arrive out of order: a read sent before the match ended
+  // must not bring it back after a newer read cleared it.
+  const [order] = useState(requestOrder);
+  const reload = useCallback(() => {
+    const id = order.next();
+    return matchesApi.active().then(
+      (res: { match: ActiveMatch | null }) => {
+        if (order.accept(id)) setMatch(res?.match ?? null);
+      },
+      () => undefined, // keep what we have; the next event or visit re-reads it
+    );
+  }, [order]);
 
   useEffect(() => {
     void reload();
