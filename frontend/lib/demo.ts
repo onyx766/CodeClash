@@ -93,27 +93,6 @@ export const posts: Post[] = [
   },
 ];
 
-export const testimonials = [
-  {
-    name: "Kevin Liu",
-    handle: "@kevin_dev",
-    avatar: "/img/avatars/avatar-9.png",
-    text: "CodeClash helped me improve my algorithm skills while competing with others!",
-  },
-  {
-    name: "Emma Davis",
-    handle: "@emma.v",
-    avatar: "/img/avatars/avatar-4.png",
-    text: "The real-time battles are addictive. Perfect for developers who love a challenge.",
-  },
-  {
-    name: "Arjun Patel",
-    handle: "@arjun_code",
-    avatar: "/img/avatars/avatar-5.png",
-    text: "Great challenges, fair matchmaking, and an awesome community!",
-  },
-];
-
 export const avatarStack = [
   "/img/avatars/avatar-1.png",
   "/img/avatars/avatar-2.png",
