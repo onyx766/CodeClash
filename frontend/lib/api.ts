@@ -188,6 +188,10 @@ export const auth = {
     request('POST', '/auth/register', { email, username, password }),
   me: () => request('GET', '/auth/me'),
   logout: () => request('POST', '/auth/logout'),
+  // Re-issues this session's cookies and signs every other session out. A
+  // wrong current password is a 400 INVALID_CURRENT_PASSWORD, never a 401.
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request('POST', '/auth/change-password', { currentPassword, newPassword }),
 };
 
 export const rooms = {

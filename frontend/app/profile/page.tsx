@@ -5,6 +5,7 @@ import { Calendar, Code2, Flame, Gem, Globe2, MapPin, PencilLine, Swords, Trophy
 import AppLayout from "../../components/layout/AppLayout";
 import MainSidebar from "../../components/app/MainSidebar";
 import ProfileRail from "../../components/app/ProfileRail";
+import ChangePasswordPanel from "../../components/profile/ChangePasswordPanel";
 import EditProfileModal from "../../components/profile/EditProfileModal";
 import MatchHistoryPanel from "../../components/profile/MatchHistoryPanel";
 import RecordsPanel from "../../components/profile/RecordsPanel";
@@ -46,7 +47,12 @@ export default function ProfilePage() {
   return (
     <AppLayout
       sidebar={<MainSidebar />}
-      rail={<ProfileRail onEdit={profileUser ? () => setEditing(true) : undefined} />}
+      rail={
+        <>
+          <ProfileRail onEdit={profileUser ? () => setEditing(true) : undefined} />
+          <ChangePasswordPanel />
+        </>
+      }
     >
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
 

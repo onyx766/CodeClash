@@ -27,6 +27,8 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<{ user: AuthUser; activeRoom: ActiveRoom | null }>;
   register: (email: string, username: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  /** Changes the password; every other session of the account is signed out. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   clearActiveRoom: () => void;
   /** Re-reads the player's open room from the server, e.g. after a match ended. */
   refreshActiveRoom: () => Promise<void>;
@@ -129,6 +131,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveRoom(null);
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const owner = userRef.current?.id ?? null;
+    // The API closes every socket of the account - this tab's included - and
+    // revokes the old cookies. Close ours first: its recovery would otherwise
+    // race the response and try to renew the session with the revoked
+    // refresh cookie, which signs the player out. Reconnect afterwards, with
+    // the cookies the response re-issued (or the old ones, if it failed).
+    disconnectSocket();
+    try {
+      await auth.changePassword(currentPassword, newPassword);
+    } finally {
+      if (owner && userRef.current?.id === owner) connectSocket(owner);
+    }
+  }, []);
+
   const clearActiveRoom = useCallback(() => {
     setActiveRoom(null);
   }, []);
@@ -151,10 +168,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       register,
       logout,
+      changePassword,
       clearActiveRoom,
       refreshActiveRoom,
     }),
-    [user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom, refreshActiveRoom],
+    [
+      user,
+      activeRoom,
+      loading,
+      sessionExpired,
+      login,
+      register,
+      logout,
+      changePassword,
+      clearActiveRoom,
+      refreshActiveRoom,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
