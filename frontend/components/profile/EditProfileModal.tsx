@@ -160,6 +160,8 @@ export default function EditProfileModal({ onClose }: { onClose: () => void }) {
     >
       <form
         onSubmit={submit}
+        // The form checks every field itself and explains what is wrong.
+        noValidate
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
