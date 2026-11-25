@@ -143,10 +143,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     async (changes: ProfileChanges) => {
       const owner = userIdRef.current;
       if (!owner) return;
-      const id = ++issued.current;
-      // PATCH answers with the whole profile, as GET does.
+      // PATCH answers with the whole profile, as GET does. Its answer is
+      // numbered on arrival: it already contains the change, so a read that
+      // was sent while the save was running must not replace it.
       const res = (await profileApi.update(changes)) as ProfileResponse;
-      apply(owner, id, res);
+      apply(owner, ++issued.current, res);
     },
     [apply],
   );
