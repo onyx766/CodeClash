@@ -144,12 +144,24 @@ function loginRedirect(): string {
  * is a same-origin path, otherwise null. Anything else (an absolute URL, a
  * protocol-relative `//host`) is ignored so the login page cannot be used as
  * an open redirect.
+ *
+ * The value is resolved the way the router will resolve it, and only the
+ * resolved same-origin path is returned. Prefix checks alone are not enough:
+ * the URL parser drops tabs and newlines and reads "\" as "/", so
+ * "/%09/evil.example" passes them and still lands on another site.
  */
 export function postLoginPath(): string | null {
   const next = new URLSearchParams(window.location.search).get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//")) return null;
-  if (next.startsWith("/\\") || next.startsWith("/login")) return null;
-  return next;
+  if (!next || !next.startsWith("/")) return null;
+  let target: URL;
+  try {
+    target = new URL(next, window.location.origin);
+  } catch {
+    return null;
+  }
+  if (target.origin !== window.location.origin) return null;
+  if (target.pathname.startsWith("/login")) return null;
+  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 /**
