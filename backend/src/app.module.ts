@@ -34,6 +34,9 @@ import { AppService } from './app.service';
           'http://localhost:3001,http://localhost:7662',
         ),
         TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
+        // Secure attribute on auth cookies. Defaults to NODE_ENV=production;
+        // set false when serving over plain HTTP (see cookie.util.ts).
+        COOKIE_SECURE: Joi.boolean().optional(),
         GEOLOCATION_PROVIDER: Joi.string()
           .valid('ip-api', 'ipapi')
           .default('ip-api'),
