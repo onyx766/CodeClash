@@ -27,7 +27,8 @@ export default function QuickMatchIndicator() {
       <span className="dot-live" />
       <div className="text-[12.5px] leading-tight">
         <p className="font-semibold">Searching for an opponent</p>
-        <p className="mt-0.5 tabular-nums text-dim">
+        {/* Ticks every second: readable, but never announced by the status region. */}
+        <p className="mt-0.5 tabular-nums text-dim" aria-live="off">
           {search ? formatElapsed(now - Date.parse(search.joinedAt)) : "0:00"}
         </p>
       </div>

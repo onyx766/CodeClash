@@ -113,7 +113,8 @@ function WaitingToStart({
       <p className="eyebrow text-blue-300">Match found</p>
       <h1 className="mt-1.5 text-[24px] font-extrabold tracking-[-0.02em]">Ready to battle?</h1>
       {seconds !== null ? (
-        <p className="mt-2 text-[13px] text-muted">
+        // The countdown changes every second: readable, but never announced.
+        <p className="mt-2 text-[13px] text-muted" aria-live="off">
           Both players must accept within{" "}
           <span className={`font-bold tabular-nums ${seconds <= 3 ? "text-rose-300" : "text-fg"}`}>{seconds}s</span>
         </p>
@@ -186,7 +187,7 @@ function CancelledBeforeStart({
           <span className="dot-live" />
           <span>
             You&apos;re back in the queue ·{" "}
-            <span className="tabular-nums">
+            <span className="tabular-nums" aria-live="off">
               {quickMatch.search ? formatElapsed(now - Date.parse(quickMatch.search.joinedAt)) : "0:00"}
             </span>
           </span>
