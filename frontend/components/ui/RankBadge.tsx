@@ -1,3 +1,7 @@
+/**
+ * A rank as the API gives it: medals for ranks 1 to 3, the number below.
+ * Equal ratings share a rank, so several players can hold the same medal.
+ */
 export default function RankBadge({ rank, size = 26 }: { rank: number; size?: number }) {
   const medal =
     rank === 1

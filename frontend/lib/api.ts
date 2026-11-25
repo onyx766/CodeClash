@@ -300,6 +300,7 @@ export const matchmaking = {
 };
 
 export type LeaderboardEntry = {
+  /** Standard competition rank: equal ratings share one, and the next rank skips (1, 1, 1, 4, ...). */
   rank: number;
   id: string;
   username: string;

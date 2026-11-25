@@ -180,14 +180,16 @@ export default function LeaderboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((entry, i) => {
+                  {entries.map((entry) => {
                     const name = entry.displayName || entry.username;
                     const isMe = entry.id === user?.id;
                     return (
                       <tr
                         key={entry.id}
                         className={`border-b border-line/60 last:border-0 transition-colors hover:bg-white/[0.03] ${
-                          i === 0
+                          // Ranks come from the API: players with equal ratings share one,
+                          // so several players can lead together.
+                          entry.rank === 1
                             ? "bg-amber/[0.06] shadow-[inset_3px_0_0_0_var(--color-amber)]"
                             : isMe
                               ? "bg-blue/[0.06] shadow-[inset_3px_0_0_0_var(--color-blue)]"

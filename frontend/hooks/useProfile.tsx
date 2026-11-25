@@ -21,7 +21,7 @@ export type ProfileUser = {
 export type ProfileStats = {
   // Ranked record: only Quick Match results touch these.
   rating: number;
-  /** 1-based position among active players, by rating. */
+  /** 1 + the number of ranked players rated strictly higher: the rank the leaderboard shows. */
   globalRank: number;
   wins: number;
   losses: number;
