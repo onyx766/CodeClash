@@ -53,12 +53,13 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  // Challenge import posts a whole challenge document as JSON, so it needs more
-  // headroom than the 100kb every other endpoint gets. Mounted BEFORE the
-  // global parser so it is the one that runs for this path; the ceiling is set
-  // just above MAX_IMPORT_BYTES (512kb) so the friendly IMPORT_FILE_TOO_LARGE
-  // check in ChallengeImportService is what a user actually hits.
-  app.use('/api/admin/challenges/import', json({ limit: '600kb' }));
+  // Challenge authoring (create, save, import, AI save) posts whole
+  // challenges, which may carry up to MAX_TEST_CASES test cases of up to
+  // MAX_TEST_CASE_JSON_BYTES each - far beyond the 100kb every other endpoint
+  // gets. Mounted BEFORE the global parser so it is the one that runs for
+  // these paths (staff-only routes). Imports are still capped at
+  // MAX_IMPORT_BYTES by ChallengeImportService's friendlier check.
+  app.use('/api/admin/challenges', json({ limit: '8mb' }));
 
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
