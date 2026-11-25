@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { InvitationsService } from './invitations.service';
 import { PrismaService } from '../../database/prisma.service';
 import { RoomsService } from '../rooms/rooms.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 
 type MockPrisma = {
   room: { findUnique: jest.Mock };
@@ -21,6 +22,7 @@ describe('InvitationsService', () => {
   let service: InvitationsService;
   let prisma: MockPrisma;
   let rooms: { joinRoomById: jest.Mock };
+  let socket: { emitToUser: jest.Mock };
 
   const HOST_ID = 'host-1';
   const INVITEE_ID = 'invitee-1';
@@ -47,12 +49,14 @@ describe('InvitationsService', () => {
     };
 
     rooms = { joinRoomById: jest.fn().mockResolvedValue({ room: ROOM, player: {} }) };
+    socket = { emitToUser: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InvitationsService,
         { provide: PrismaService, useValue: prisma },
         { provide: RoomsService, useValue: rooms },
+        { provide: SocketGateway, useValue: socket },
       ],
     }).compile();
 
@@ -153,6 +157,29 @@ describe('InvitationsService', () => {
     it('rejects when the invitation does not belong to the caller', async () => {
       await expect(service.decline('someone-else', INVITATION.id)).rejects.toMatchObject({
         code: 'INVITATION_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('real-time notifications', () => {
+    it('pushes a new invitation to the invitee', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: INVITEE_ID, username: 'invitee' });
+      await service.invite(HOST_ID, ROOM_ID, 'invitee');
+      expect(socket.emitToUser).toHaveBeenCalledWith(INVITEE_ID, 'invitation:received', {
+        invitation: INVITATION,
+      });
+    });
+
+    it.each([
+      ['accept', 'ACCEPTED'],
+      ['decline', 'DECLINED'],
+    ] as const)('tells the inviter when the invitee answers (%s)', async (action, status) => {
+      await service[action](INVITEE_ID, INVITATION.id);
+      expect(socket.emitToUser).toHaveBeenCalledWith(HOST_ID, 'invitation:updated', {
+        invitationId: INVITATION.id,
+        roomId: ROOM_ID,
+        inviteeId: INVITEE_ID,
+        status,
       });
     });
   });

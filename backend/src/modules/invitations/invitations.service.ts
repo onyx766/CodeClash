@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RoomsService } from '../rooms/rooms.service';
+import { SocketGateway } from '../../socket/socket.gateway';
+import { SocketEvents } from '../../socket/socket.events';
 import {
   InvitationAlreadyHandledException,
   InvitationNotFoundException,
@@ -26,6 +28,7 @@ export class InvitationsService {
   constructor(
     private prisma: PrismaService,
     private rooms: RoomsService,
+    private socket: SocketGateway,
   ) {}
 
   async invite(inviterId: string, roomId: string, inviteeUsername: string) {
@@ -54,10 +57,13 @@ export class InvitationsService {
       throw new BadRequestException('That player already has a pending invite to this room.');
     }
 
-    return this.prisma.roomInvitation.create({
+    const invitation = await this.prisma.roomInvitation.create({
       data: { roomId, inviterId, inviteeId: invitee.id },
       include: inviteInclude,
     });
+    // Same shape as GET /invitations/me (inviter {id, username}, room summary).
+    this.socket.emitToUser(invitee.id, SocketEvents.INVITATION_RECEIVED, { invitation });
+    return invitation;
   }
 
   async listMine(userId: string) {
@@ -75,16 +81,31 @@ export class InvitationsService {
       where: { id: invitationId },
       data: { status: 'ACCEPTED', respondedAt: new Date() },
     });
+    this.notifyInviter(invitation, 'ACCEPTED');
     return { room };
   }
 
   async decline(userId: string, invitationId: string) {
-    await this.findPendingForUser(userId, invitationId);
+    const invitation = await this.findPendingForUser(userId, invitationId);
     await this.prisma.roomInvitation.update({
       where: { id: invitationId },
       data: { status: 'DECLINED', respondedAt: new Date() },
     });
+    this.notifyInviter(invitation, 'DECLINED');
     return { success: true };
+  }
+
+  /** Ids and status only - the inviter already knows who they invited. */
+  private notifyInviter(
+    invitation: { id: string; roomId: string; inviterId: string; inviteeId: string },
+    status: 'ACCEPTED' | 'DECLINED',
+  ) {
+    this.socket.emitToUser(invitation.inviterId, SocketEvents.INVITATION_UPDATED, {
+      invitationId: invitation.id,
+      roomId: invitation.roomId,
+      inviteeId: invitation.inviteeId,
+      status,
+    });
   }
 
   private async findPendingForUser(userId: string, invitationId: string) {

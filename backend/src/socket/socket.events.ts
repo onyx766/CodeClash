@@ -29,6 +29,11 @@ export const SocketEvents = {
   MATCHMAKING_OPPONENT_UNAVAILABLE: 'matchmaking:opponent-unavailable',
   MATCHMAKING_ERROR: 'matchmaking:error',
   MATCH_READY: 'match:ready',
+
+  // Server -> user channel. Private-room invitations, so the invitee sees
+  // them without refreshing and the inviter learns the answer.
+  INVITATION_RECEIVED: 'invitation:received',
+  INVITATION_UPDATED: 'invitation:updated',
 };
 
 export const matchChannel = (matchId: string) => `match:${matchId}`;
