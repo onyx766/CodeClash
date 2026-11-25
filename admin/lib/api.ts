@@ -121,9 +121,14 @@ async function send(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
+    // fetch only rejects when no response could be read: the API is down or
+    // unreachable, or - most often in a fresh deployment - the browser
+    // blocked the response because this origin is not in the API's CORS list.
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "this console";
     throw new ApiError(
       0,
-      "Could not reach the CodeClash API. Is the backend running on port 4000?",
+      `Could not reach the CodeClash API at ${getApiBase()}. Check that the backend is running, and that this page's origin (${origin}) is listed in the API's ADMIN_FRONTEND_URL.`,
       "NETWORK_ERROR",
     );
   }

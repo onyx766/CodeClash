@@ -57,7 +57,8 @@ const FEATURES = [
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { login, user, isAdmin, loading, sessionExpired } = useAdminAuth();
+  const { login, logout, user, isAdmin, loading, sessionExpired } =
+    useAdminAuth();
   const playerAppUrl = usePlayerAppUrl();
 
   const [email, setEmail] = useState("");
@@ -77,19 +78,30 @@ export default function AdminLoginPage() {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
+    // The credentials were accepted but the account cannot use the console:
+    // end that session again rather than leave it signed in (the cookie is
+    // shared with the player app in this browser).
+    const reject = async (message: string) => {
+      try {
+        await logout();
+      } catch {
+        // Already signed out as far as the console is concerned.
+      }
+      setError(message);
+    };
+
     try {
       const account = await login(email.trim(), password);
       if (!account?.role) {
-        // Credentials were accepted but the API did not report a role. That is
-        // not a permission problem - it means /auth/me came back without the
-        // field, which an out-of-date backend build does.
-        setError(
+        // Not a permission problem: /auth/me came back without the field,
+        // which an out-of-date backend build does.
+        await reject(
           "Signed in, but the API did not report this account's role. The backend may be running an older build — restart it and try again.",
         );
         return;
       }
       if (account.role !== "ADMIN" && account.role !== "MASTER") {
-        setError(
+        await reject(
           `This account is a ${account.role} and does not have administrator access. Contact the platform owner.`,
         );
         return;
