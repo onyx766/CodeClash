@@ -8,10 +8,12 @@ import express from 'express';
 import { createHmac } from 'crypto';
 
 const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
-// BRPOPLPUSH blocks its connection until a job arrives; on the shared client
-// it would hold back the heartbeat, so an idle worker would expire from
-// runner:worker:* and look dead.
-const queueRedis = redis.duplicate();
+/**
+ * Jobs this worker runs at the same time. Each job container is capped at half
+ * a CPU, so a couple per worker keeps simultaneous submissions from queueing
+ * behind each other; add worker replicas to scale further.
+ */
+const CONCURRENCY = Math.max(1, Math.min(Number(process.env.WORKER_CONCURRENCY) || 2, 16));
 const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
 const workerId = process.env.WORKER_ID || uuidv4();
 const HEARTBEAT_TTL = Number(process.env.WORKER_HEARTBEAT_TTL || 10);
@@ -298,6 +300,18 @@ async function loop() {
   // Register only once jobs can actually run: the API treats a registered
   // worker as "ready" (e.g. before validating challenges at startup).
   startHeartbeat().catch((e) => console.error('heartbeat failed', e));
+  // eslint-disable-next-line no-console
+  console.log(`Worker ${workerId}: ready, running up to ${CONCURRENCY} job(s) at a time`);
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => consume()));
+}
+
+/**
+ * One consumer slot. BRPOPLPUSH blocks its connection until a job arrives,
+ * so every slot pops on its own connection; on the shared client it would
+ * also hold back the heartbeat and make an idle worker look dead.
+ */
+async function consume() {
+  const queueRedis = redis.duplicate();
   while (true) {
     try {
       const jobRaw = await queueRedis.brpoplpush('code_jobs', 'code_jobs:processing', 0);
