@@ -1,4 +1,4 @@
-import type { MatchHistoryPage } from './battle';
+import type { Difficulty, MatchHistoryPage } from './battle';
 import type { MatchmakingResponse, ReadyResponse } from './matchmaking';
 
 // NEXT_PUBLIC_API_URL overrides this for deployments where the API lives on
@@ -257,6 +257,26 @@ export const leaderboard = {
     request('GET', `/leaderboard?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`) as Promise<
       LeaderboardEntry[]
     >,
+};
+
+/** One published challenge in the public catalogue (GET /challenges). */
+export type CatalogueChallenge = {
+  id: string;
+  slug: string;
+  title: string;
+  /** Markdown, as authored in the admin console. */
+  description: string;
+  difficulty: Difficulty;
+  tags: string[];
+  function: { name: string; parameters: { name: string; type: string }[]; returnType: string };
+  limits: { timeLimitMs: number; memoryLimitMb: number; outputLimitKb: number };
+  publicTestCount: number;
+  publishedAt: string | null;
+};
+
+// Published challenges, newest first - the pool battles draw from.
+export const challenges = {
+  list: () => request('GET', '/challenges') as Promise<{ challenges: CatalogueChallenge[] }>,
 };
 
 // Own profile: avatar, competitive stats, location. GET /users/me/profile.
