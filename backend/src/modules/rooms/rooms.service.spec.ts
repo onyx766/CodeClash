@@ -6,6 +6,8 @@ import { RedisService } from '../../redis/redis.service';
 type MockPrisma = {
   room: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; findMany: jest.Mock };
   roomPlayer: { create: jest.Mock; count: jest.Mock; findFirst: jest.Mock; deleteMany: jest.Mock };
+  $transaction: jest.Mock;
+  $queryRaw: jest.Mock;
 };
 
 describe('RoomsService', () => {
@@ -32,6 +34,9 @@ describe('RoomsService', () => {
         findFirst: jest.fn(),
         deleteMany: jest.fn(),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      // Interactive transactions run the callback against the same mocks.
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -47,7 +52,7 @@ describe('RoomsService', () => {
 
   describe('createRoom', () => {
     it('always reports PRIVATE_ROOM/CASUAL with ratingEligible false', async () => {
-      const result = await service.createRoom(HOST_ID, 2);
+      const result = await service.createRoom(HOST_ID);
       expect(result).toMatchObject({
         type: 'PRIVATE_ROOM',
         mode: 'CASUAL',
@@ -57,7 +62,7 @@ describe('RoomsService', () => {
     });
 
     it('never persists a ranked/ratingEligible flag - room.create ignores it', async () => {
-      await service.createRoom(HOST_ID, 2);
+      await service.createRoom(HOST_ID);
       const createArgs = prisma.room.create.mock.calls[0][0];
       expect(createArgs.data).not.toHaveProperty('ranked');
       expect(createArgs.data).not.toHaveProperty('ratingEligible');
@@ -65,7 +70,7 @@ describe('RoomsService', () => {
 
     it('rejects a second room from the same host while one is still active', async () => {
       prisma.room.findFirst.mockResolvedValue(ROOM);
-      await expect(service.createRoom(HOST_ID, 2)).rejects.toMatchObject({
+      await expect(service.createRoom(HOST_ID)).rejects.toMatchObject({
         code: 'ROOM_ALREADY_HOSTED',
       });
       expect(prisma.room.create).not.toHaveBeenCalled();
@@ -73,7 +78,7 @@ describe('RoomsService', () => {
 
     it('allows a new room once the host has no active room', async () => {
       prisma.room.findFirst.mockResolvedValue(null);
-      await expect(service.createRoom(HOST_ID, 2)).resolves.toMatchObject({
+      await expect(service.createRoom(HOST_ID)).resolves.toMatchObject({
         type: 'PRIVATE_ROOM',
       });
     });
@@ -87,19 +92,54 @@ describe('RoomsService', () => {
     });
   });
 
-  describe('listActive', () => {
-    it('never selects passwordHash or email for player users', async () => {
-      await service.listActive();
-      const findManyArgs = prisma.room.findMany.mock.calls[0][0];
-      const userSelect = findManyArgs.include.players.include.user;
-      expect(userSelect).not.toBe(true);
-      expect(userSelect.select).not.toHaveProperty('passwordHash');
-      expect(userSelect.select).not.toHaveProperty('email');
+  describe('createRoom capacity', () => {
+    it('always creates a two-seat room', async () => {
+      await service.createRoom(HOST_ID);
+      expect(prisma.room.create.mock.calls[0][0].data.maxPlayers).toBe(2);
+    });
+  });
+
+  describe('getRoom visibility', () => {
+    const roomWithPlayers = { ...ROOM, players: [{ userId: HOST_ID }, { userId: 'guest-1' }] };
+
+    it('lets the room\'s players and staff read it', async () => {
+      prisma.room.findUnique.mockResolvedValue(roomWithPlayers);
+      await expect(service.getRoom(ROOM.id, { id: 'guest-1', role: 'USER' as never })).resolves.toMatchObject({
+        id: ROOM.id,
+      });
+      await expect(service.getRoom(ROOM.id, { id: 'staff-1', role: 'ADMIN' as never })).resolves.toMatchObject({
+        id: ROOM.id,
+      });
     });
 
-    it('tags every listed room as casual', async () => {
-      const result = await service.listActive();
-      expect(result[0]).toMatchObject({ type: 'PRIVATE_ROOM', mode: 'CASUAL', ratingEligible: false });
+    it('answers 404 to anyone else, without revealing the room or its code', async () => {
+      prisma.room.findUnique.mockResolvedValue(roomWithPlayers);
+      await expect(
+        service.getRoom(ROOM.id, { id: 'stranger', role: 'USER' as never }),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('joinRoomById', () => {
+    beforeEach(() => {
+      prisma.room.findUnique.mockResolvedValue({ ...ROOM, expiresAt: null, match: null });
+    });
+
+    it('checks capacity and inserts under a row lock on the room', async () => {
+      prisma.roomPlayer.count.mockResolvedValue(1);
+      prisma.roomPlayer.findFirst.mockResolvedValue(null);
+
+      await service.joinRoomById('guest-1', ROOM.id);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.roomPlayer.create).toHaveBeenCalledWith({ data: { roomId: ROOM.id, userId: 'guest-1' } });
+    });
+
+    it('refuses to seat a third player', async () => {
+      prisma.roomPlayer.count.mockResolvedValue(2);
+      await expect(service.joinRoomById('guest-2', ROOM.id)).rejects.toThrow('Room is full');
+      expect(prisma.roomPlayer.create).not.toHaveBeenCalled();
     });
   });
 });

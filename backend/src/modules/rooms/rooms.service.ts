@@ -5,6 +5,11 @@ import {
   MatchAlreadyStartedException,
   RoomAlreadyHostedException,
 } from '../../common/exceptions/app.exception';
+import { Role } from '@prisma/client';
+import { roleAtLeast } from '../../common/constants/role-hierarchy';
+
+/** Battles are strictly 1v1, so a private room seats exactly two players. */
+export const ROOM_CAPACITY = 2;
 
 const ROOM_TTL_MS = 30 * 60 * 1000;
 
@@ -63,7 +68,8 @@ export class RoomsService {
     await client.del(`room:${roomId}:ready`);
   }
 
-  async createRoom(hostId: string, maxPlayers = 2) {
+  async createRoom(hostId: string) {
+    const maxPlayers = ROOM_CAPACITY;
     const existing = await this.prisma.room.findFirst({
       where: { hostId, status: { not: 'FINISHED' } },
       include: { match: { select: { id: true } } },
@@ -106,18 +112,28 @@ export class RoomsService {
       await this.deleteRoomCascade(room.id);
       throw new NotFoundException('Room not found');
     }
-    const players = await this.prisma.roomPlayer.count({ where: { roomId: room.id } });
-    if (players >= room.maxPlayers) throw new BadRequestException('Room is full');
-    const already = await this.prisma.roomPlayer.findFirst({ where: { roomId: room.id, userId } });
-    if (already) throw new BadRequestException('Player already in room');
-    const rp = await this.prisma.roomPlayer.create({ data: { roomId: room.id, userId } });
+    // Capacity check and insert under a row lock on the room, so two players
+    // racing for the last seat cannot both get it.
+    const rp = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Room" WHERE id = ${room.id} FOR UPDATE`;
+      const players = await tx.roomPlayer.count({ where: { roomId: room.id } });
+      if (players >= room.maxPlayers) throw new BadRequestException('Room is full');
+      const already = await tx.roomPlayer.findFirst({ where: { roomId: room.id, userId } });
+      if (already) throw new BadRequestException('Player already in room');
+      return tx.roomPlayer.create({ data: { roomId: room.id, userId } });
+    });
     const client = this.redis.getClient();
     await client.sadd(`room:${room.id}:players`, userId);
     await client.expire(`room:${room.id}:players`, 60 * 60 * 24);
     return { room: withCasualMetadata(room), player: rp };
   }
 
-  async getRoom(id: string) {
+  /**
+   * With a viewer, only that room's players and staff may read it (the room
+   * carries its join code); anyone else gets the same 404 as for a room that
+   * does not exist.
+   */
+  async getRoom(id: string, viewer?: { id: string; role: Role }) {
     const room = await this.prisma.room.findUnique({
       where: { id },
       include: {
@@ -126,32 +142,18 @@ export class RoomsService {
       },
     });
     if (!room) throw new NotFoundException('Room not found');
+    if (
+      viewer &&
+      !room.players.some((player) => player.userId === viewer.id) &&
+      !roleAtLeast(viewer.role, Role.ADMIN)
+    ) {
+      throw new NotFoundException('Room not found');
+    }
     if (this.isExpired(room)) {
       await this.deleteRoomCascade(room.id);
       throw new NotFoundException('Room not found');
     }
     return withCasualMetadata(room);
-  }
-
-  async listActive() {
-    const rooms = await this.prisma.room.findMany({
-      where: {
-        status: 'WAITING',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
-      include: {
-        players: {
-          include: {
-            // Explicit select, never `user: true` - a room listing must never
-            // expose passwordHash/email.
-            user: { select: { id: true, username: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return rooms.map(withCasualMetadata);
   }
 
   /**

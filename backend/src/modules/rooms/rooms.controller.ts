@@ -14,8 +14,9 @@ export class RoomsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Request() req: any, @Body() body: CreateRoomDto) {
-    return this.svc.createRoom(req.user.id, body.maxPlayers || 2);
+  async create(@Request() req: any, @Body() _body: CreateRoomDto) {
+    // Battles are always 1v1; CreateRoomDto only accepts maxPlayers = 2.
+    return this.svc.createRoom(req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -31,10 +32,11 @@ export class RoomsController {
     return this.matches.startPrivateRoomMatch(code.trim().toUpperCase(), req.user.id);
   }
 
+  /** The room's own players (and staff) only - the payload includes the join code. */
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async get(@Param('id') id: string) {
-    return this.svc.getRoom(id);
+  async get(@Request() req: any, @Param('id') id: string) {
+    return this.svc.getRoom(id, req.user);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -43,9 +45,4 @@ export class RoomsController {
     return this.svc.leaveRoom(req.user.id, id);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get()
-  async list() {
-    return this.svc.listActive();
-  }
 }
