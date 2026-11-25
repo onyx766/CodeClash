@@ -1,12 +1,13 @@
 "use client";
 
 import { Loader2, Trophy, X, Zap } from "lucide-react";
-import useQuickMatch from "../../hooks/useQuickMatch";
+import useQuickMatch, { useShowsQuickMatchSearch } from "../../hooks/useQuickMatch";
 import useNow, { formatElapsed } from "../../hooks/useNow";
 
 /** The lobby's Quick Match card: find a ranked opponent, or follow the search in progress. */
 export default function QuickMatchCard() {
   const { phase, search, start, cancel } = useQuickMatch();
+  useShowsQuickMatchSearch();
   const queued = phase === "searching" || phase === "cancelling";
   const now = useNow(1000, queued);
   const elapsed = search ? formatElapsed(now - Date.parse(search.joinedAt)) : "0:00";

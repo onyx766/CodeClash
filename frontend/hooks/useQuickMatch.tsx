@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ApiError, auth, matches as matchesApi, matchmaking as matchmakingApi } from "../lib/api";
 import {
@@ -31,6 +31,10 @@ type QuickMatchContextValue = {
   dismissNotice: () => void;
   /** Re-reads the queue state, e.g. after a ready check failed and the server may have re-queued us. */
   sync: () => Promise<void>;
+  /** Something on the page shows the search itself (see useShowsQuickMatchSearch). */
+  searchShownOnPage: boolean;
+  /** Registers a component that shows the search; returns the function that unregisters it. */
+  showSearchOnPage: () => () => void;
 };
 
 type State = {
@@ -94,6 +98,12 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const userId = user?.id ?? null;
   const [state, setState] = useState<State>({ owner: null, ...IDLE });
+  // How many mounted components show the search themselves.
+  const [searchViews, setSearchViews] = useState(0);
+  const showSearchOnPage = useCallback(() => {
+    setSearchViews((n) => n + 1);
+    return () => setSearchViews((n) => n - 1);
+  }, []);
 
   // Read from async callbacks, which must not act for a player who has since
   // signed out or been replaced.
@@ -338,6 +348,7 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
     };
   }, [socket, userId, apply, update, openMatch, sync, stopTitleFlash]);
 
+  const searchShownOnPage = searchViews > 0;
   const value = useMemo(
     () => ({
       phase,
@@ -347,11 +358,24 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
       cancel,
       dismissNotice,
       sync,
+      searchShownOnPage,
+      showSearchOnPage,
     }),
-    [phase, visible.search, visible.notice, start, cancel, dismissNotice, sync],
+    [phase, visible.search, visible.notice, start, cancel, dismissNotice, sync, searchShownOnPage, showSearchOnPage],
   );
 
   return <QuickMatchContext.Provider value={value}>{children}</QuickMatchContext.Provider>;
+}
+
+/**
+ * For a component that shows the Quick Match search itself (the lobby card,
+ * a failed ready check that put the player back in the queue): while it is
+ * mounted the floating QuickMatchIndicator stays hidden. Registered before
+ * the browser paints, so the indicator never flashes up.
+ */
+export function useShowsQuickMatchSearch() {
+  const { showSearchOnPage } = useQuickMatch();
+  useLayoutEffect(() => showSearchOnPage(), [showSearchOnPage]);
 }
 
 export default function useQuickMatch() {

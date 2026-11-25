@@ -14,7 +14,7 @@ import {
   type ReadyCheckFailure,
 } from "../../lib/matchmaking";
 import useNow, { formatElapsed } from "../../hooks/useNow";
-import useQuickMatch from "../../hooks/useQuickMatch";
+import useQuickMatch, { useShowsQuickMatchSearch } from "../../hooks/useQuickMatch";
 import { Avatar, avatarForUserId } from "../ui/Bits";
 import { Spinner } from "./BattlePanels";
 
@@ -165,6 +165,8 @@ function CancelledBeforeStart({
   const quickMatch = useQuickMatch();
   const { sync } = quickMatch;
   const queued = quickMatch.phase === "searching" || quickMatch.phase === "cancelling";
+  // Shows the search the server put the player back into (below).
+  useShowsQuickMatchSearch();
   const now = useNow(1000, queued);
   const opponentName = match.opponent?.displayName || match.opponent?.username || "Your opponent";
 

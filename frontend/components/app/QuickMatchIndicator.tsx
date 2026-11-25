@@ -1,23 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import useQuickMatch from "../../hooks/useQuickMatch";
 import useNow, { formatElapsed } from "../../hooks/useNow";
 
 /**
- * Shown on other pages while a Quick Match search runs, so the player knows
- * they are still queued (a found match opens automatically) and can stop it.
+ * Shown on every page while a Quick Match search runs, so the player knows
+ * they are still queued (a found match opens automatically) and can stop it -
+ * also on a finished match opened from the history.
  */
 export default function QuickMatchIndicator() {
-  const pathname = usePathname();
-  const { phase, search, cancel } = useQuickMatch();
+  const { phase, search, cancel, searchShownOnPage } = useQuickMatch();
   const queued = phase === "searching" || phase === "cancelling";
   const now = useNow(1000, queued);
 
-  // The lobby card and the battle page show the search themselves.
-  if (!queued || pathname === "/lobby" || pathname.startsWith("/match/")) return null;
+  // Redundant where the page shows the search itself: the lobby card, or the
+  // battle page of a ready check that failed and put the player back in the
+  // queue. (A found match ends the search, so the ready check and the battle
+  // it leads to never show one.)
+  if (!queued || searchShownOnPage) return null;
 
   return (
     <div
