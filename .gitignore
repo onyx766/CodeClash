@@ -1,0 +1,14 @@
+# Local configuration and secrets (see .env.example)
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output (each app also has its own .gitignore)
+node_modules/
+dist/
+.next/
+coverage/
+
+# Logs and OS noise
+*.log
+.DS_Store
