@@ -60,6 +60,10 @@ async function bootstrap() {
   // these paths (staff-only routes). Imports are still capped at
   // MAX_IMPORT_BYTES by ChallengeImportService's friendlier check.
   app.use('/api/admin/challenges', json({ limit: '8mb' }));
+  // Run/Submit accept up to MAX_SOURCE_CODE_LENGTH (64K) characters of code,
+  // which JSON-encodes to well over 100kb when it contains quotes, newlines
+  // or non-ASCII text.
+  app.use('/api/matches', json({ limit: '512kb' }));
 
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
