@@ -262,24 +262,30 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
       openMatch(payload.matchId);
     };
     const onCancelled = (payload: { matchId?: string; reason?: string }) => {
-      if (payload?.reason === "STALE") {
-        update(owner, (prev) =>
-          prev.phase === "searching" || prev.phase === "cancelling"
-            ? {
-                phase: "idle",
-                search: null,
-                notice: {
-                  tone: "error",
-                  text: "You were removed from the queue because the connection was lost.",
-                  retry: true,
-                },
-              }
-            : {},
-        );
+      if (payload?.matchId) {
+        // A ready check nobody passed. The battle page explains it in detail.
+        update(owner, { notice: { tone: "info", text: "The match was cancelled before it started.", retry: true } });
         return;
       }
-      // A ready check nobody passed. The battle page explains it in detail.
-      update(owner, { notice: { tone: "info", text: "The match was cancelled before it started.", retry: true } });
+      // No match involved: the server took us out of the queue.
+      update(owner, (prev) => {
+        if (prev.phase !== "searching" && prev.phase !== "cancelling") return {};
+        if (payload?.reason === "STALE") {
+          return {
+            phase: "idle",
+            search: null,
+            notice: {
+              tone: "error",
+              text: "You were removed from the queue because the connection was lost.",
+              retry: true,
+            },
+          };
+        }
+        // JOINED_ROOM: taking a seat in a private room ends the search, which
+        // is what the player asked for - nothing to report.
+        if (payload?.reason === "JOINED_ROOM") return { phase: "idle", search: null, notice: null };
+        return { phase: "idle", search: null, notice: { tone: "info", text: "Your search has stopped.", retry: true } };
+      });
     };
     const onOpponentUnavailable = () => {
       // The server puts whoever accepted straight back in the queue.
