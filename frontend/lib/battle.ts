@@ -140,6 +140,8 @@ export interface TestRunResult {
     runtimeMs: number;
     memoryKb: number | null;
     message: string | null;
+    /** JSON preview of what the solution returned; sample tests only, never hidden ones. */
+    actualOutput?: string | null;
   }[];
 }
 

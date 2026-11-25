@@ -380,6 +380,12 @@ export function TestCasesPanel({ statement, outcome }: { statement: ChallengeSta
                 <span className="text-dim">Expected: </span>
                 {JSON.stringify(sample.expectedOutput)}
               </p>
+              {run && !run.passed && typeof run.actualOutput === "string" && (
+                <p className="mt-1 break-all text-rose-200">
+                  <span className="text-dim">Your output: </span>
+                  {run.actualOutput}
+                </p>
+              )}
               {run?.message && <p className="mt-2 break-all text-rose-300">{run.message}</p>}
             </li>
           );
