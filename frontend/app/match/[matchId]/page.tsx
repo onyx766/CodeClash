@@ -26,6 +26,7 @@ import {
   type Outcome,
 } from "../../../components/battle/BattlePanels";
 import { ReadyCheck } from "../../../components/battle/ReadyCheck";
+import Markdown from "../../../components/ui/Markdown";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -330,7 +331,9 @@ export default function MatchPage() {
                     View Full Description <ExternalLink size={14} />
                   </button>
                 </div>
-                <p className="line-clamp-2 shrink-0 px-5 pt-2 text-[13px] text-muted">{statement.challenge.description}</p>
+                <Markdown inline className="line-clamp-2 shrink-0 px-5 pt-2 text-[13px] text-muted">
+                  {statement.challenge.description}
+                </Markdown>
 
                 <div className="mx-4 mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-black/20">
                   <div className="flex shrink-0 items-center justify-between border-b border-line">

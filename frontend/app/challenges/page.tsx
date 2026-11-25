@@ -7,6 +7,7 @@ import AppLayout from "../../components/layout/AppLayout";
 import ChallengesSidebar from "../../components/app/ChallengesSidebar";
 import ChallengesRail from "../../components/app/ChallengesRail";
 import { IconBadge, Tag } from "../../components/ui/Bits";
+import Markdown from "../../components/ui/Markdown";
 import { challenges as challengesApi, type CatalogueChallenge } from "../../lib/api";
 import type { Difficulty } from "../../lib/battle";
 import { DIFFICULTIES, DIFFICULTY_META, formatTag } from "../../lib/difficulty";
@@ -171,7 +172,9 @@ export default function ChallengesPage() {
                   ))}
                 </div>
 
-                <p className="mt-2.5 line-clamp-2 text-[12.5px] leading-relaxed text-dim">{c.description}</p>
+                <Markdown inline className="mt-2.5 line-clamp-2 text-[12.5px] leading-relaxed text-dim">
+                  {c.description}
+                </Markdown>
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-dim">
                   <code className="rounded-md bg-black/25 px-2 py-1 font-mono text-[11.5px] text-muted">
