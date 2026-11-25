@@ -231,7 +231,18 @@ async function runJob(job: any) {
       // post to backend for persistence if BACKEND_URL is configured
       try {
         const backend = process.env.BACKEND_URL || 'http://backend:4000';
-        const jobPostBody = { jobId, metadata: metadata || null, exitCode: code, payload };
+        // A summary, not the raw container output: the record is for the
+        // staff job log, the verdict itself already went back through Redis,
+        // and full output (up to MAX_CAPTURED_OUTPUT) would exceed the API's
+        // body limit.
+        const summary = {
+          jobId,
+          exitCode: code,
+          limitExceeded,
+          outputBytes: Buffer.byteLength(out, 'utf8'),
+          metadata: metadata || null,
+        };
+        const jobPostBody = { jobId, metadata: metadata || null, exitCode: code, payload: summary };
         const bodyStr = JSON.stringify(jobPostBody);
         const headers: any = { 'Content-Type': 'application/json' };
         let secret = process.env.RUNNER_SECRET;
@@ -249,11 +260,15 @@ async function runJob(job: any) {
           headers['x-runner-timestamp'] = ts;
           headers['x-runner-signature'] = sig;
         }
-        await fetch(`${backend}/api/jobs/record`, {
+        const recorded = await fetch(`${backend}/api/jobs/record`, {
           method: 'POST',
           headers,
           body: bodyStr,
         });
+        if (!recorded.ok) {
+          // eslint-disable-next-line no-console
+          console.warn(`Worker: job ${jobId} record rejected by the API (HTTP ${recorded.status})`);
+        }
       } catch (e) {
         // eslint-disable-next-line no-console
         console.warn('Failed to POST job result to backend', e);
