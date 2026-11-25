@@ -22,9 +22,14 @@ const trimOrClear = ({ value }: { value: unknown }) => {
   return trimmed === '' ? null : trimmed;
 };
 
+/** Same for the lists: null clears one (an empty list, never a null). */
+const emptyIfNull = ({ value }: { value: unknown }) =>
+  value === null ? [] : value;
+
 /**
  * PATCH /users/me/profile. Every field is optional: omitted fields keep their
- * value, and a text field sent as null or an empty string is cleared.
+ * value, a text field sent as null or an empty string is cleared, and a list
+ * sent as null is emptied.
  */
 export class UpdateProfileDto {
   @IsOptional()
@@ -57,6 +62,7 @@ export class UpdateProfileDto {
   avatarUrl?: string | null;
 
   @IsOptional()
+  @Transform(emptyIfNull)
   @IsArray()
   @ArrayMaxSize(5, {
     message: 'favoriteLanguages can contain at most 5 items',
@@ -70,6 +76,7 @@ export class UpdateProfileDto {
   favoriteLanguages?: string[];
 
   @IsOptional()
+  @Transform(emptyIfNull)
   @IsArray()
   @ArrayMaxSize(10, { message: 'favoriteTopics can contain at most 10 items' })
   @ArrayUnique({ message: 'favoriteTopics must not contain duplicates' })

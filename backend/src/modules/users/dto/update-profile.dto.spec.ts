@@ -68,6 +68,16 @@ describe('UpdateProfileDto validation', () => {
     }
   });
 
+  it('empties a favourite list sent as null instead of passing null on', async () => {
+    const dto = plainToInstance(UpdateProfileDto, {
+      favoriteLanguages: null,
+      favoriteTopics: null,
+    });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect([dto.favoriteLanguages, dto.favoriteTopics]).toEqual([[], []]);
+  });
+
   it('still rejects a text field that is not a string', async () => {
     const errors = await validateDto({ displayName: 42 as unknown as string });
     expect(errors.some((e) => e.property === 'displayName')).toBe(true);
