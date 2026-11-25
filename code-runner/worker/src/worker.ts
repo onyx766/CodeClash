@@ -8,6 +8,10 @@ import express from 'express';
 import { createHmac } from 'crypto';
 
 const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
+// BRPOPLPUSH blocks its connection until a job arrives; on the shared client
+// it would hold back the heartbeat, so an idle worker would expire from
+// runner:worker:* and look dead.
+const queueRedis = redis.duplicate();
 const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
 const workerId = process.env.WORKER_ID || uuidv4();
 const HEARTBEAT_TTL = Number(process.env.WORKER_HEARTBEAT_TTL || 10);
@@ -296,7 +300,7 @@ async function loop() {
   startHeartbeat().catch((e) => console.error('heartbeat failed', e));
   while (true) {
     try {
-      const jobRaw = await redis.brpoplpush('code_jobs', 'code_jobs:processing', 0);
+      const jobRaw = await queueRedis.brpoplpush('code_jobs', 'code_jobs:processing', 0);
       if (!jobRaw) { await wait(100); continue; }
       let job;
       try { job = JSON.parse(jobRaw); } catch (e) { console.error('Failed to parse job JSON', jobRaw); await redis.lrem('code_jobs:processing', 0, jobRaw); continue; }

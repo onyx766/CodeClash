@@ -13,6 +13,21 @@ import { createHmac } from 'crypto';
 const execAsync = util.promisify(exec);
 const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
 
+/**
+ * Waits for a job's result on a dedicated connection. BRPOP blocks the
+ * connection it runs on, so issuing it on the shared client would stall every
+ * other command (other requests' enqueues, /ready's PING) until this job
+ * finished.
+ */
+async function waitForResult(jobId: string, timeoutSeconds: number): Promise<[string, string] | null> {
+  const waiter = redis.duplicate();
+  try {
+    return (await waiter.brpop(`code_results:${jobId}`, timeoutSeconds)) as [string, string] | null;
+  } finally {
+    waiter.disconnect();
+  }
+}
+
 /** Same secret and sources as the worker's /jobs/record signature. */
 function loadRunnerSecret(): string | undefined {
   if (process.env.RUNNER_SECRET) return process.env.RUNNER_SECRET;
@@ -190,7 +205,7 @@ app.post('/v2/judge', async (req, res) => {
     const waitSeconds = Math.ceil(hardTimeoutMs / 1000) + 15;
     let popped: [string, string] | null = null;
     try {
-      popped = (await redis.brpop(`code_results:${jobId}`, waitSeconds)) as [string, string] | null;
+      popped = await waitForResult(jobId, waitSeconds);
     } catch (e) {
       return sendSigned(res, 504, { ok: false, jobId, error: 'error waiting for runner' });
     }
@@ -292,12 +307,10 @@ app.post('/run', async (req, res) => {
     }
 
     // wait for worker result list: code_results:{jobId}
-    const resList = `code_results:${jobId}`;
     const waitTimeoutSeconds = parseInt(process.env.RUNNER_WAIT_TIMEOUT || '20', 10);
     let r: [string, string] | null = null;
     try {
-      // wrap brpop in retry in case Redis transiently fails
-      r = await retry(() => redis.brpop(resList, waitTimeoutSeconds) as Promise<[string, string]>, 1, 0);
+      r = await waitForResult(jobId, waitTimeoutSeconds);
     } catch (e) {
       // timeout or redis error
       // eslint-disable-next-line no-console
