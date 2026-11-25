@@ -1571,8 +1571,9 @@ img {
     padding: 24px 20px 20px;
   }
 
+  /* Horizontal only: sections set their own vertical padding (py-8, ...). */
   .cc-container {
-    padding: 0 16px;
+    padding-inline: 16px;
   }
 }
 
