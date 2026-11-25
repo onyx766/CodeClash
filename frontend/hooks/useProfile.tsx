@@ -45,15 +45,15 @@ export type ProfilePreferences = {
   favoriteTopics: string[];
 };
 
-/** Editable fields of PATCH /users/me/profile; omitted fields stay as they are. */
+/** Editable fields of PATCH /users/me/profile; omitted fields stay as they are, null clears one. */
 export type ProfileChanges = Partial<{
-  /** 1-50 characters; it can be changed but not removed. */
-  displayName: string;
-  /** Up to 300 characters; "" clears it. */
-  bio: string;
-  /** Up to 100 characters; "" clears it. */
-  location: string;
-  /** An http(s) image URL; null removes it and the default avatar is shown. */
+  /** Up to 50 characters; null removes it and the username is shown. */
+  displayName: string | null;
+  /** Up to 300 characters; null removes it. */
+  bio: string | null;
+  /** Up to 100 characters; null removes it. */
+  location: string | null;
+  /** An absolute http(s) image URL; null removes it and the default avatar is shown. */
   avatarUrl: string | null;
   favoriteLanguages: string[];
   favoriteTopics: string[];

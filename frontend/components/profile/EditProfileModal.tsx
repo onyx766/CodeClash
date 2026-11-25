@@ -3,47 +3,8 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { ApiError } from "../../lib/api";
-import useProfile, { type ProfileChanges } from "../../hooks/useProfile";
-
-// Limits enforced by PATCH /users/me/profile (UpdateProfileDto).
-const MAX = {
-  displayName: 50,
-  bio: 300,
-  location: 100,
-  avatarUrl: 500,
-  languages: 5,
-  language: 30,
-  topics: 10,
-  topic: 50,
-};
-
-/** "JavaScript, Go, javascript" -> ["JavaScript", "Go"]: trimmed, blanks and repeats dropped. */
-function parseList(raw: string): string[] {
-  const seen = new Set<string>();
-  const items: string[] = [];
-  for (const part of raw.split(",")) {
-    const item = part.trim();
-    const key = item.toLowerCase();
-    if (item && !seen.has(key)) {
-      seen.add(key);
-      items.push(item);
-    }
-  }
-  return items;
-}
-
-function sameList(a: string[], b: string[]) {
-  return a.length === b.length && a.every((item, i) => item === b[i]);
-}
-
-function isWebUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
+import { PROFILE_LIMITS as MAX, profileChanges } from "../../lib/profileForm";
+import useProfile from "../../hooks/useProfile";
 
 function Field({
   id,
@@ -88,53 +49,15 @@ export default function EditProfileModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [saving, onClose]);
 
-  /** The fields that differ from the saved profile, or why the form cannot be saved. */
-  const collectChanges = (): { changes: ProfileChanges } | { problem: string } => {
-    const changes: ProfileChanges = {};
-
-    const name = displayName.trim();
-    if (name !== (profileUser?.displayName ?? "")) {
-      if (!name) return { problem: "Enter a display name. It can be changed, but not removed." };
-      changes.displayName = name;
-    }
-
-    const nextBio = bio.trim();
-    if (nextBio !== (profileUser?.bio ?? "")) changes.bio = nextBio;
-
-    const nextLocation = location.trim();
-    if (nextLocation !== (profileUser?.location ?? "")) changes.location = nextLocation;
-
-    const nextAvatar = avatarUrl.trim();
-    if (nextAvatar !== (profileUser?.avatarUrl ?? "")) {
-      if (nextAvatar && !isWebUrl(nextAvatar)) {
-        return { problem: "The avatar must be an image link starting with https://." };
-      }
-      // null removes a custom avatar; the default one is shown again.
-      changes.avatarUrl = nextAvatar || null;
-    }
-
-    const nextLanguages = parseList(languages);
-    if (nextLanguages.length > MAX.languages) return { problem: `Pick at most ${MAX.languages} languages.` };
-    if (nextLanguages.some((l) => l.length > MAX.language)) {
-      return { problem: `Each language can be at most ${MAX.language} characters long.` };
-    }
-    if (!sameList(nextLanguages, preferences?.favoriteLanguages ?? [])) changes.favoriteLanguages = nextLanguages;
-
-    const nextTopics = parseList(topics);
-    if (nextTopics.length > MAX.topics) return { problem: `Pick at most ${MAX.topics} topics.` };
-    if (nextTopics.some((t) => t.length > MAX.topic)) {
-      return { problem: `Each topic can be at most ${MAX.topic} characters long.` };
-    }
-    if (!sameList(nextTopics, preferences?.favoriteTopics ?? [])) changes.favoriteTopics = nextTopics;
-
-    return { changes };
-  };
-
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (saving) return;
     setError("");
-    const result = collectChanges();
+    // Optional fields the player emptied are sent as null, which clears them.
+    const result = profileChanges(
+      { displayName, bio, location, avatarUrl, languages, topics },
+      { profileUser, preferences },
+    );
     if ("problem" in result) {
       setError(result.problem);
       return;
@@ -187,7 +110,11 @@ export default function EditProfileModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-5 space-y-4">
-          <Field id="profile-display-name" label="Display name" hint="Shown instead of your username.">
+          <Field
+            id="profile-display-name"
+            label="Display name"
+            hint="Shown instead of your username. Leave empty to show your username."
+          >
             <input
               id="profile-display-name"
               value={displayName}
