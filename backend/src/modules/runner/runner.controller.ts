@@ -1,7 +1,11 @@
-import { Controller, Get, HttpException, Param } from '@nestjs/common';
+import { Controller, Get, HttpException, Param, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
 import axios from 'axios';
 import { RedisService } from '../../redis/redis.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('runner')
 export class RunnerController {
@@ -33,6 +37,9 @@ export class RunnerController {
     }
   }
 
+  // Queue internals and raw job output: staff only.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Get('status')
   async status() {
     try {
@@ -47,6 +54,9 @@ export class RunnerController {
     }
   }
 
+  // Queue internals and raw job output: staff only.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Get('jobs')
   async jobs() {
     try {
@@ -61,6 +71,9 @@ export class RunnerController {
     }
   }
 
+  // Queue internals and raw job output: staff only.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @Get('job/:jobId')
   async job(@Param('jobId') jobId: string) {
     try {
