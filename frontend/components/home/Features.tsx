@@ -13,7 +13,7 @@ const features = [
     icon: Code2,
     tone: "green",
     title: "Diverse Challenges",
-    desc: "From easy warm-ups to hard algorithms. New challenges added every day.",
+    desc: "From easy warm-ups to hard algorithm problems, all in JavaScript.",
   },
   {
     icon: TrendingUp,
@@ -25,7 +25,7 @@ const features = [
     icon: Trophy,
     tone: "blue",
     title: "Earn & Climb",
-    desc: "Earn points, unlock rewards, and climb the leaderboard to prove your skills.",
+    desc: "Win ranked matches, earn rating points, and climb the leaderboard to prove your skills.",
   },
 ] as const;
 
