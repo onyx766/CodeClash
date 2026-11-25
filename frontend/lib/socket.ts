@@ -112,11 +112,25 @@ function create(userId: string) {
   ownerId = userId;
 }
 
+/**
+ * How long recovery attempt `attempt` (0 for the first) waits: about a second,
+ * then twice as long after every failure, up to 30 s. Each delay varies by up
+ * to 25% either way, so several tabs never renew the session at the same
+ * instant.
+ */
+export function recoveryDelay(attempt: number, random: () => number = Math.random): number {
+  return Math.round(Math.min(30_000, 1_000 * 2 ** attempt) * (0.75 + random() * 0.5));
+}
+
 function scheduleRecovery(s: Socket) {
   if (recoveryTimer) return;
-  // Straight away the first time - an expired access token is the usual
-  // cause - then back off, so a server that keeps refusing is not hammered.
-  const delay = failures === 0 ? 0 : Math.min(30_000, 1_000 * 2 ** (failures - 1));
+  // Never straight away: when another tab changes the password, the server
+  // closes this tab's socket before that tab has stored the cookies it was
+  // re-issued, and renewing now would send the refresh cookie the change just
+  // revoked. A refused refresh is re-checked once (see refreshSession) before
+  // the session ends. Then back off, so a server that keeps refusing is not
+  // hammered.
+  const delay = recoveryDelay(failures);
   failures += 1;
   recoveryTimer = setTimeout(() => {
     recoveryTimer = null;

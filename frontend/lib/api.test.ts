@@ -14,6 +14,10 @@ function fakeServer() {
     /** The access token the browser holds. */
     cookie: 1,
     refreshAnswer: 200 as Answer,
+    /** Runs when POST /auth/refresh arrives, e.g. another tab storing new cookies meanwhile. */
+    onRefresh: null as null | (() => void),
+    /** Forces the answer of GET /auth/me. */
+    meAnswer: null as Answer | null,
     /** A refresh answers 200 but the browser does not store the new cookie. */
     refreshKeepsOldCookie: false,
     banned: false,
@@ -41,6 +45,7 @@ function fakeServer() {
     await new Promise((resolve) => setTimeout(resolve, 1));
 
     if (path === "/auth/refresh") {
+      server.onRefresh?.();
       const answer = server.refreshAnswer;
       if (answer === "network") throw new TypeError("fetch failed");
       if (answer === 200) {
@@ -53,6 +58,10 @@ function fakeServer() {
       }
       if (answer === 401) return unauthenticated();
       return json(answer, { success: false, error: { code: "ERROR", message: "ThrottlerException: Too Many Requests" } });
+    }
+    if (path === "/auth/me" && server.meAnswer !== null) {
+      if (server.meAnswer === "network") throw new TypeError("fetch failed");
+      return json(server.meAnswer, { success: false, error: { code: "ERROR", message: "Unavailable" } });
     }
     if (path === "/auth/login") {
       return json(401, { success: false, error: { code: "INVALID_CREDENTIALS", message: "Invalid email or password" } });
@@ -170,9 +179,11 @@ describe("session renewal", () => {
     server.validToken = 2;
     server.refreshAnswer = 401;
 
-    const results = await Promise.allSettled([api.auth.me(), api.matches.active(), api.profile.me()]);
+    const results = await Promise.allSettled([api.matches.active(), api.profile.me(), api.invitations.mine()]);
 
     expect(refreshCalls()).toBe(1);
+    // One re-check of the cookies, in case another tab had just replaced them.
+    expect(server.calls.filter((call) => call === "GET /auth/me")).toHaveLength(1);
     expect(reasons).toEqual(["expired"]);
     for (const result of results) {
       expect(result).toMatchObject({
@@ -182,6 +193,39 @@ describe("session renewal", () => {
     }
     // Ending a session never clears the cookies other tabs share.
     expect(server.calls).not.toContain("POST /auth/logout");
+  });
+
+  it("keeps the session when another tab replaced the cookies while the refresh was on its way", async () => {
+    // A password change in another tab revoked this tab's session and gave
+    // the browser new cookies, which arrive just after this refresh left.
+    server.validToken = 2;
+    server.refreshAnswer = 401;
+    server.onRefresh = () => {
+      server.cookie = 2;
+    };
+
+    await expect(api.matches.active()).resolves.toMatchObject({ path: "/matches/me/active" });
+
+    expect(server.calls).toEqual([
+      "GET /matches/me/active",
+      "POST /auth/refresh",
+      "GET /auth/me",
+      "GET /matches/me/active",
+    ]);
+    expect(expired).toBe(0);
+    expect(refreshed).toBe(1);
+  });
+
+  it("does not sign out when the re-check after a refused refresh gets no answer", async () => {
+    server.validToken = 2;
+    server.refreshAnswer = 401;
+    server.meAnswer = "network";
+
+    await expect(api.matches.active()).rejects.toMatchObject({
+      status: 401,
+      message: "Your session could not be renewed right now. Please try again in a moment.",
+    });
+    expect(expired).toBe(0);
   });
 
   it.each([500, 503, 429, "network" as const])(

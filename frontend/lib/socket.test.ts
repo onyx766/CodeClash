@@ -138,6 +138,8 @@ const latest = () => fake.sockets[fake.sockets.length - 1];
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  // No jitter unless a test asks for it: recovery attempt n waits 1 s * 2^n.
+  vi.spyOn(Math, "random").mockReturnValue(0.5);
   vi.stubGlobal("fetch", fetchMock);
   Object.assign(server, { validToken: 1, cookie: 1, refreshAnswer: null, calls: [] });
   fake.sockets.length = 0;
@@ -157,6 +159,7 @@ afterEach(() => {
   sock.disconnectSocket();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("one socket per player", () => {
@@ -187,6 +190,18 @@ describe("one socket per player", () => {
   });
 });
 
+describe("recoveryDelay", () => {
+  it("waits about a second first, then doubles up to 30 s, each within 25%", () => {
+    expect(sock.recoveryDelay(0, () => 0.5)).toBe(1_000);
+    expect(sock.recoveryDelay(0, () => 0)).toBe(750);
+    expect(sock.recoveryDelay(0, () => 1)).toBe(1_250);
+    expect(sock.recoveryDelay(1, () => 0.5)).toBe(2_000);
+    expect(sock.recoveryDelay(3, () => 0.5)).toBe(8_000);
+    expect(sock.recoveryDelay(5, () => 0.5)).toBe(30_000);
+    expect(sock.recoveryDelay(12, () => 1)).toBe(37_500);
+  });
+});
+
 describe("recovery", () => {
   it("renews the session and reconnects after the server disconnects the socket", async () => {
     sock.connectSocket("u1");
@@ -194,7 +209,9 @@ describe("recovery", () => {
     first.accept();
 
     first.kick();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(refreshCalls()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
 
     expect(refreshCalls()).toBe(1);
     expect(fake.sockets).toHaveLength(2);
@@ -211,7 +228,7 @@ describe("recovery", () => {
     sock.connectSocket("u1");
 
     latest().refuse(code, options);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
 
     expect(refreshCalls()).toBe(1);
     expect(fake.sockets).toHaveLength(2);
@@ -256,52 +273,54 @@ describe("recovery", () => {
 
   it("ends the session once, without logging out, when the renewal is refused", async () => {
     server.refreshAnswer = 401;
+    server.cookie = 0;
     sock.connectSocket("u1");
 
     latest().refuse("UNAUTHENTICATED");
     await vi.advanceTimersByTimeAsync(120_000);
 
     expect(ended).toEqual(["expired"]);
-    expect(refreshCalls()).toBe(1);
-    expect(server.calls).not.toContain("POST /auth/logout");
+    expect(server.calls).toEqual(["POST /auth/refresh", "GET /auth/me"]);
     expect(sock.getSocket()).toBeNull();
   });
 
-  it("keeps trying, and never signs out, while the session cannot be renewed", async () => {
-    server.refreshAnswer = 503;
-    sock.connectSocket("u1");
+  it.each<Answer>([503, 429, "network"])(
+    "keeps trying, and never signs out, while the session cannot be renewed (%s)",
+    async (answer) => {
+      server.refreshAnswer = answer;
+      sock.connectSocket("u1");
 
-    latest().refuse("UNAUTHENTICATED");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(refreshCalls()).toBe(1);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(refreshCalls()).toBe(2);
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(refreshCalls()).toBe(3);
+      latest().refuse("UNAUTHENTICATED");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(refreshCalls()).toBe(1);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(refreshCalls()).toBe(2);
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(refreshCalls()).toBe(3);
 
-    server.refreshAnswer = null;
-    await vi.advanceTimersByTimeAsync(4_000);
-    expect(refreshCalls()).toBe(4);
-    expect(fake.sockets).toHaveLength(2);
-    expect(ended).toEqual([]);
-  });
+      server.refreshAnswer = null;
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(refreshCalls()).toBe(4);
+      expect(fake.sockets).toHaveLength(2);
+      expect(ended).toEqual([]);
+    },
+  );
 
   it("backs off while the server keeps refusing new sockets, and resets once one stays up", async () => {
     sock.connectSocket("u1");
-    const refusedAfter = (ms: number) => vi.advanceTimersByTimeAsync(ms).then(() => latest().refuse("UNAUTHENTICATED"));
 
     latest().refuse("UNAUTHENTICATED");
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(refreshCalls()).toBe(1);
 
-    await refusedAfter(0);
-    await vi.advanceTimersByTimeAsync(999);
+    latest().refuse("UNAUTHENTICATED");
+    await vi.advanceTimersByTimeAsync(1_999);
     expect(refreshCalls()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(refreshCalls()).toBe(2);
 
-    await refusedAfter(0);
-    await vi.advanceTimersByTimeAsync(1_999);
+    latest().refuse("UNAUTHENTICATED");
+    await vi.advanceTimersByTimeAsync(3_999);
     expect(refreshCalls()).toBe(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(refreshCalls()).toBe(3);
@@ -310,8 +329,77 @@ describe("recovery", () => {
     latest().accept();
     await vi.advanceTimersByTimeAsync(10_000);
     latest().kick();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(refreshCalls()).toBe(4);
+  });
+
+  it("varies the wait, so several tabs do not renew at the same instant", async () => {
+    vi.mocked(Math.random).mockReturnValue(0);
+    sock.connectSocket("u1");
+
+    latest().refuse("UNAUTHENTICATED");
+    await vi.advanceTimersByTimeAsync(749);
+    expect(refreshCalls()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refreshCalls()).toBe(1);
+  });
+
+  describe("when another tab changes the password", () => {
+    // The server revokes every session but the changing tab's, closes all of
+    // the account's sockets, and only then answers that tab with new cookies,
+    // which the browser shares with this tab.
+    function passwordChangedElsewhere({ cookiesArriveAfterMs }: { cookiesArriveAfterMs: number }) {
+      server.validToken += 1;
+      latest().kick();
+      setTimeout(() => {
+        server.cookie = server.validToken;
+      }, cookiesArriveAfterMs);
+    }
+
+    it("waits for the other tab's cookies before renewing", async () => {
+      sock.connectSocket("u1");
+      latest().accept();
+
+      passwordChangedElsewhere({ cookiesArriveAfterMs: 50 });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(server.calls).toEqual(["POST /auth/refresh"]);
+      expect(ended).toEqual([]);
+      expect(fake.sockets).toHaveLength(2);
+    });
+
+    it("re-checks the session once before ending it when the renewal raced the new cookies", async () => {
+      sock.connectSocket("u1");
+      latest().accept();
+      // The refresh goes out with the revoked cookie; the new ones land
+      // while it is on its way.
+      fetchMock.mockImplementationOnce(async (url: string) => {
+        server.calls.push(`POST ${new URL(url).pathname.replace(/^\/api/, "")}`);
+        server.cookie = server.validToken;
+        return respond(401, { success: false, error: { code: "UNAUTHENTICATED" } });
+      });
+
+      passwordChangedElsewhere({ cookiesArriveAfterMs: 5_000 });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(server.calls).toEqual(["POST /auth/refresh", "GET /auth/me"]);
+      expect(ended).toEqual([]);
+      expect(fake.sockets).toHaveLength(2);
+    });
+
+    it("ends the session when the re-check is refused too, still without logging out", async () => {
+      sock.connectSocket("u1");
+      latest().accept();
+
+      // This tab's session was revoked, and no new cookies arrive.
+      server.validToken += 1;
+      latest().kick();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(server.calls).toEqual(["POST /auth/refresh", "GET /auth/me"]);
+      expect(ended).toEqual(["expired"]);
+      expect(sock.getSocket()).toBeNull();
+    });
   });
 
   it("stops recovering once the player signs out", async () => {

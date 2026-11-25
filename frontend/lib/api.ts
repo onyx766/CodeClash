@@ -136,8 +136,17 @@ async function renew(): Promise<Renewal> {
   if (res?.status === 403) {
     return { outcome: 'rejected', reason: (await errorCodeOf(res)) === 'ACCOUNT_BANNED' ? 'banned' : 'expired' };
   }
-  // 401: the refresh cookie is missing, expired or revoked.
-  if (res?.status === 401) return { outcome: 'rejected', reason: 'expired' };
+  if (res?.status !== 401) return { outcome: 'unavailable' };
+
+  // 401: the refresh cookie is missing, expired or revoked - or another tab
+  // has just replaced it. A password change revokes every session but the one
+  // that made it, and re-issues that tab's cookies; the browser shares them
+  // with this tab, possibly only after this refresh went out with the old
+  // one. Check once whether the cookies held now are valid before giving up.
+  const me = await tryFetch(`${BASE}/auth/me`, { credentials: 'include' });
+  if (me?.ok) return { outcome: 'refreshed' };
+  if (me?.status === 401) return { outcome: 'rejected', reason: 'expired' };
+  if (me?.status === 403 && (await errorCodeOf(me)) === 'ACCOUNT_BANNED') return { outcome: 'rejected', reason: 'banned' };
   return { outcome: 'unavailable' };
 }
 
