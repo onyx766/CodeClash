@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authHref, currentPathWithQuery, isAuthPage, safeNextPath } from "./navigation";
+import { authHref, currentPathWithQuery, isAuthPage, revealHashTarget, safeNextPath } from "./navigation";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -100,5 +100,33 @@ describe("current location helpers", () => {
     expect(isAuthPage("/login")).toBe(true);
     expect(isAuthPage("/register")).toBe(true);
     expect(isAuthPage("/lobby")).toBe(false);
+  });
+});
+
+describe("revealHashTarget", () => {
+  function page(hash: string) {
+    const panel = { scrollIntoView: vi.fn() };
+    vi.stubGlobal("window", { location: { hash } });
+    vi.stubGlobal("document", { getElementById: (id: string) => (id === "match-history" ? panel : null) });
+    return panel;
+  }
+
+  it("scrolls to the element the URL's hash names", () => {
+    const panel = page("#match-history");
+    expect(revealHashTarget("match-history")).toBe(true);
+    expect(panel.scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the page where it is for another hash or none", () => {
+    for (const hash of ["", "#records"]) {
+      const panel = page(hash);
+      expect(revealHashTarget("match-history")).toBe(false);
+      expect(panel.scrollIntoView).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does nothing when the element is not on the page", () => {
+    page("#gone");
+    expect(revealHashTarget("gone")).toBe(false);
   });
 });

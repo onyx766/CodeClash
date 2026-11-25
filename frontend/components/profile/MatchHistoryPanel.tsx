@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronRight, RotateCcw, Trophy } from "lucide-react";
 import { Avatar, Panel, Tag, avatarForUserId } from "../ui/Bits";
 import { ApiError, matches as matchesApi } from "../../lib/api";
 import type { MatchHistoryEntry } from "../../lib/battle";
 import { formatRelativeTime } from "../../lib/format";
+import { revealHashTarget } from "../../lib/navigation";
 
 const PAGE_SIZE = 10;
 
@@ -62,6 +63,17 @@ export default function MatchHistoryPanel({ refreshKey = 0 }: { refreshKey?: num
       cancelled = true;
     };
   }, [refreshKey, attempt]);
+
+  // Arriving at /profile#match-history (the lobby's "View All"), the browser
+  // scrolls to this panel while it still says "Loading…"; the matches then
+  // make the page longer and the panel ends up elsewhere. Go back to it once
+  // the first page is in.
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (!loaded || revealed.current) return;
+    revealed.current = true;
+    revealHashTarget("match-history");
+  }, [loaded]);
 
   const retry = () => {
     setFailed(false);

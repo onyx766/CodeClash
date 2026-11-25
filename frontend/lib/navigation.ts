@@ -13,6 +13,18 @@ export function currentPathWithQuery(): string {
 }
 
 /**
+ * Scrolls to the element `id` when the URL's hash names it - for content that
+ * moved after the browser scrolled to it, because it (or what is above it)
+ * finished loading. Returns whether it scrolled.
+ */
+export function revealHashTarget(id: string): boolean {
+  if (typeof window === "undefined" || window.location.hash !== `#${id}`) return false;
+  const target = document.getElementById(id);
+  target?.scrollIntoView();
+  return !!target;
+}
+
+/**
  * Returns `raw` only when it is a path on this site. Anything that could leave
  * the origin - "//evil.example", "/\evil.example", an absolute URL - or that
  * points back at the sign-in pages falls back to `fallback`.
