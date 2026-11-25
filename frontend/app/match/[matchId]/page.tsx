@@ -27,8 +27,17 @@ import {
 } from "../../../components/battle/BattlePanels";
 import { ReadyCheck } from "../../../components/battle/ReadyCheck";
 import Markdown from "../../../components/ui/Markdown";
+import { configureSelfHostedMonaco } from "../../../lib/monaco";
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+// Configured as the module loads, so before the editor first mounts.
+const MonacoEditor = dynamic(
+  () =>
+    import("@monaco-editor/react").then(({ default: Editor, loader }) => {
+      configureSelfHostedMonaco(loader);
+      return Editor;
+    }),
+  { ssr: false },
+);
 
 const draftKey = (matchId: string, matchChallengeId: string) => `cc:battle:${matchId}:draft:${matchChallengeId}`;
 const selectedKey = (matchId: string) => `cc:battle:${matchId}:selected`;
