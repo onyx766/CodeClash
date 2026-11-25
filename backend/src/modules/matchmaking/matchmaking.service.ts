@@ -49,6 +49,9 @@ const ACTIVE_QUICK_MATCH_STATUSES: MatchStatus[] = [
   MatchStatus.IN_PROGRESS,
 ];
 
+/** How long a READY (both accepted) match may take to start before the sweep gives up on it. */
+export const READY_START_GRACE_MS = 30_000;
+
 @Injectable()
 export class MatchmakingService {
   private readonly logger = new Logger(MatchmakingService.name);
@@ -215,9 +218,11 @@ export class MatchmakingService {
     }
 
     // Same five-challenge battle engine as private rooms - only the match's
-    // QUICK_MATCH / ratingEligible values differ.
-    await this.matches.startQuickMatch(matchId);
-    return { matchId, status: MatchStatus.IN_PROGRESS };
+    // QUICK_MATCH / ratingEligible values differ. Report the status the start
+    // actually produced: it does not start a match that was cancelled in the
+    // meantime.
+    const started = await this.matches.startQuickMatch(matchId);
+    return { matchId, status: started?.status ?? MatchStatus.IN_PROGRESS };
   }
 
   // --- Background worker entry points ---------------------------------
@@ -247,11 +252,21 @@ export class MatchmakingService {
   }
 
   async processReadyTimeouts(): Promise<void> {
+    const now = Date.now();
     const expired = await this.prisma.match.findMany({
       where: {
         type: MatchType.QUICK_MATCH,
-        status: { in: [MatchStatus.PENDING_READY, MatchStatus.READY] },
-        readyDeadline: { lt: new Date() },
+        OR: [
+          // Somebody never accepted in time.
+          { status: MatchStatus.PENDING_READY, readyDeadline: { lt: new Date(now) } },
+          // READY means both accepted and a start is in flight; only a start
+          // that has been stuck well past the deadline is cancelled, so the
+          // sweep never races a start that is about to succeed.
+          {
+            status: MatchStatus.READY,
+            readyDeadline: { lt: new Date(now - READY_START_GRACE_MS) },
+          },
+        ],
       },
       include: { participants: true },
     });

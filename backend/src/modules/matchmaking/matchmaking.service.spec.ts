@@ -471,6 +471,23 @@ describe('MatchmakingService', () => {
       expect(matches.startQuickMatch).toHaveBeenCalledTimes(1);
     });
 
+    it('reports the status the start produced, not an assumed IN_PROGRESS', async () => {
+      const { service, prisma, matches } = await buildService();
+      prisma.match.findUnique.mockResolvedValue(match());
+      prisma.matchParticipant.findMany.mockResolvedValue([
+        { matchId: 'match-1', userId: 'a', readyAt: new Date() },
+        { matchId: 'match-1', userId: 'b', readyAt: new Date() },
+      ]);
+      prisma.match.updateMany.mockResolvedValue({ count: 1 });
+      // e.g. the match was cancelled between the READY claim and the start
+      matches.startQuickMatch.mockResolvedValue({ id: 'match-1', status: 'CANCELLED' });
+
+      await expect(service.handleReady('match-1', 'b')).resolves.toEqual({
+        matchId: 'match-1',
+        status: 'CANCELLED',
+      });
+    });
+
     it('propagates a failed battle start (e.g. too few challenges)', async () => {
       const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
@@ -552,6 +569,23 @@ describe('MatchmakingService', () => {
       await service.processReadyTimeouts();
 
       expect(emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('processReadyTimeouts query', () => {
+    it('cancels unanswered matches at the deadline but leaves an in-flight start a grace period', async () => {
+      const { service, prisma } = await buildService();
+      prisma.match.findMany.mockResolvedValue([]);
+      const before = Date.now();
+
+      await service.processReadyTimeouts();
+
+      const where = prisma.match.findMany.mock.calls[0][0].where;
+      const [pending, ready] = where.OR;
+      expect(pending.status).toBe('PENDING_READY');
+      expect(pending.readyDeadline.lt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(ready.status).toBe('READY');
+      expect(ready.readyDeadline.lt.getTime()).toBeLessThanOrEqual(Date.now() - 30_000);
     });
   });
 
