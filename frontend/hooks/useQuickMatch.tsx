@@ -12,6 +12,7 @@ import {
   type QuickMatchNotice,
   type RatingRange,
 } from "../lib/matchmaking";
+import { flashTitle } from "../lib/titleFlash";
 import useAuth from "./useAuth";
 import useSocket from "./useSocket";
 
@@ -45,6 +46,9 @@ const IDLE: Omit<State, "owner"> = { phase: "idle", search: null, notice: null }
 // GET /matchmaking/quick is also the queue heartbeat: a searcher the server
 // has not heard from for ~10 s is dropped.
 const POLL_MS = 3_000;
+
+/** How long a found match's title flash may outlast its ready deadline (clocks differ). */
+const FLASH_GRACE_MS = 2_000;
 
 const QuickMatchContext = createContext<QuickMatchContextValue | null>(null);
 
@@ -100,6 +104,18 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
     userIdRef.current = userId;
     pathnameRef.current = pathname;
   }, [userId, pathname]);
+
+  // A match found while the player is in another tab flashes the tab title
+  // until they come back or the ready check ends.
+  const titleFlashRef = useRef<{ matchId: string; stop: () => void } | null>(null);
+  const stopTitleFlash = useCallback((matchId?: string) => {
+    const flash = titleFlashRef.current;
+    if (!flash || (matchId && flash.matchId !== matchId)) return;
+    titleFlashRef.current = null;
+    flash.stop();
+  }, []);
+  // Never outlives the player it was for.
+  useEffect(() => () => stopTitleFlash(), [userId, stopTitleFlash]);
 
   const update = useCallback((owner: string, patch: Patch | ((prev: State) => Patch)) => {
     if (owner !== userIdRef.current) return;
@@ -255,11 +271,24 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
       if (!payload?.matchId) return;
       rememberMatchFound(payload);
       update(owner, { phase: "idle", search: null, notice: null });
+      if (document.hidden) {
+        stopTitleFlash();
+        // Until the ready check is over at the latest; its start or failure
+        // (below) usually ends the flash sooner.
+        const deadline = Date.parse(payload.readyDeadline);
+        titleFlashRef.current = {
+          matchId: payload.matchId,
+          stop: flashTitle("Match found!", {
+            until: (Number.isFinite(deadline) ? deadline : Date.now() + 30_000) + FLASH_GRACE_MS,
+          }),
+        };
+      }
       openMatch(payload.matchId);
     };
     const onCancelled = (payload?: MatchmakingCancelledPayload) => {
       const { readyCheck, notice } = describeCancellation(payload);
       if (readyCheck) {
+        stopTitleFlash(payload?.matchId);
         // A ready check that failed: the battle page explains it in detail,
         // the lobby shows the notice. Whoever accepted in time hears
         // matchmaking:opponent-unavailable instead and is back in the queue.
@@ -271,7 +300,8 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
         prev.phase === "searching" || prev.phase === "cancelling" ? { phase: "idle", search: null, notice } : {},
       );
     };
-    const onOpponentUnavailable = () => {
+    const onOpponentUnavailable = (payload?: { matchId?: string }) => {
+      stopTitleFlash(payload?.matchId);
       // The server puts whoever accepted straight back in the queue.
       update(owner, {
         phase: "searching",
@@ -287,7 +317,9 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
     };
     // Both players get this once a match starts. The room page handles its own.
     const onStarted = (payload?: { matchId?: string }) => {
-      if (!payload?.matchId || pathnameRef.current.startsWith("/rooms/")) return;
+      if (!payload?.matchId) return;
+      stopTitleFlash(payload.matchId);
+      if (pathnameRef.current.startsWith("/rooms/")) return;
       openMatch(payload.matchId);
     };
     socket.on("matchmaking:searching", onSearching);
@@ -304,7 +336,7 @@ export function QuickMatchProvider({ children }: { children: React.ReactNode }) 
       socket.off("matchmaking:error", onError);
       socket.off("match:started", onStarted);
     };
-  }, [socket, userId, apply, update, openMatch, sync]);
+  }, [socket, userId, apply, update, openMatch, sync, stopTitleFlash]);
 
   const value = useMemo(
     () => ({
