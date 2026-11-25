@@ -27,7 +27,7 @@ function build() {
         where.roomId === 'room-1' && ROOM_PLAYERS.has(where.userId) ? { id: `rp-${where.userId}` } : null,
       ),
     },
-    room: { findUnique: jest.fn(async () => ({ id: 'room-1', players: [] })) },
+    room: { findUnique: jest.fn(async (_args: unknown) => ({ id: 'room-1', players: [] })) },
   };
   const redis = {
     del: jest.fn(),
@@ -140,7 +140,7 @@ describe('SocketGateway room channel', () => {
 
     expect(client.join).toHaveBeenCalledWith('room:room-1');
     expect(to).toHaveBeenCalledWith('room:room-1');
-    const include = prisma.room.findUnique.mock.calls[0][0].include;
+    const include = (prisma.room.findUnique.mock.calls[0][0] as { include: any }).include;
     expect(include.players.include.user).toEqual({ select: { id: true, username: true } });
   });
 
