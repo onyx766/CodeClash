@@ -1,3 +1,5 @@
+import type { MatchmakingResponse, ReadyResponse } from './matchmaking';
+
 // NEXT_PUBLIC_API_URL overrides this for deployments where the API lives on
 // a different host. Otherwise, derive it from whatever host the browser used
 // to load the page - this stays correct even when accessed via a VPN IP that
@@ -213,7 +215,9 @@ export const matches = {
   active: () => request('GET', '/matches/me/active'),
   history: (page = 1, pageSize = 10) =>
     request('GET', `/matches/me/history?page=${page}&pageSize=${pageSize}`),
-  ready: (id: string) => request('POST', `/matches/${id}/ready`),
+  // Quick Match only: accept the match found. Both players must accept
+  // before its ready deadline or it is cancelled.
+  ready: (id: string) => request('POST', `/matches/${id}/ready`) as Promise<ReadyResponse>,
   giveUp: (id: string) => request('POST', `/matches/${id}/give-up`),
   // Public sample tests only - never solves a challenge.
   run: (matchId: string, matchChallengeId: string, code: string) =>
@@ -221,6 +225,35 @@ export const matches = {
   // Public + hidden tests; only the runner's ACCEPTED verdict solves.
   submit: (matchId: string, matchChallengeId: string, code: string) =>
     request('POST', `/matches/${matchId}/challenges/${matchChallengeId}/submit`, { code }),
+};
+
+// Ranked Quick Match queue. While searching, call status() at least every 3 s:
+// it doubles as the heartbeat, and a silent searcher is dropped after ~10 s.
+export const matchmaking = {
+  start: () => request('POST', '/matchmaking/quick') as Promise<MatchmakingResponse>,
+  status: () => request('GET', '/matchmaking/quick') as Promise<MatchmakingResponse>,
+  cancel: () => request('DELETE', '/matchmaking/quick') as Promise<MatchmakingResponse>,
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  rating: number;
+  wins: number;
+  losses: number;
+  matchesPlayed: number;
+  totalScore: number;
+};
+
+// Public ranked standings (active players only).
+export const leaderboard = {
+  top: (limit = 50) =>
+    request('GET', `/leaderboard?limit=${Math.min(100, Math.max(1, Math.floor(limit)))}`) as Promise<
+      LeaderboardEntry[]
+    >,
 };
 
 // Own profile: avatar, competitive stats, location. GET /users/me/profile.
