@@ -145,8 +145,14 @@ async function send(method: string, url: string, body: unknown): Promise<Respons
   }
 }
 
-function errorMessage(res: Response, renewable: boolean, code?: string, message?: string) {
-  if (res.status === 401 && renewable) return 'Your session has expired. Please sign in again.';
+/** `renewal` is how renewing the session went, for a 401 that tried to. */
+function errorMessage(res: Response, renewal: RefreshOutcome | null, code?: string, message?: string) {
+  if (res.status === 401 && renewal) {
+    // The session may well still be valid: the server that renews it did not
+    // answer, or was too busy to.
+    if (renewal === 'unavailable') return 'Your session could not be renewed right now. Please try again in a moment.';
+    return 'Your session has expired. Please sign in again.';
+  }
   // The rate limiter answers with its class name ("ThrottlerException: ...").
   if (res.status === 429 && (!code || code === 'ERROR')) {
     return 'Too many requests. Please wait a moment and try again.';
@@ -159,12 +165,13 @@ async function request(method: string, path: string, body?: unknown) {
   const renewable = !NO_REFRESH.test(url);
   const generation = sessionGeneration;
   let res = await send(method, url, body);
+  let renewal: RefreshOutcome | null = null;
 
   if (res.status === 401 && renewable) {
     // The guards reject before any handler runs, so a 401 means nothing was
     // done and replaying the request once is safe, even for a POST.
-    const outcome = generation !== sessionGeneration ? 'refreshed' : await refreshSession();
-    if (outcome === 'refreshed') res = await send(method, url, body);
+    renewal = generation !== sessionGeneration ? 'refreshed' : await refreshSession();
+    if (renewal === 'refreshed') res = await send(method, url, body);
   }
 
   const ct = res.headers.get('content-type') || '';
@@ -176,7 +183,7 @@ async function request(method: string, path: string, body?: unknown) {
     // A ban applies to every request at once; there is nothing left to do
     // with this session.
     if (renewable && res.status === 403 && code === 'ACCOUNT_BANNED') notify(expiredListeners);
-    throw new ApiError(res.status, errorMessage(res, renewable, code, message), code, details);
+    throw new ApiError(res.status, errorMessage(res, renewal, code, message), code, details);
   }
 
   return payload;
