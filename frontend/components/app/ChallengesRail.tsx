@@ -1,3 +1,4 @@
+import { RotateCcw } from "lucide-react";
 import { Panel } from "../ui/Bits";
 import type { CatalogueChallenge } from "../../lib/api";
 import { DIFFICULTIES, DIFFICULTY_META, formatTag } from "../../lib/difficulty";
@@ -49,10 +50,16 @@ function DifficultyRing({ counts, total }: { counts: { color: string; count: num
 /** Catalogue breakdown by difficulty, and its tags as filters. */
 export default function ChallengesRail({
   challenges,
+  failed = false,
+  onRetry,
   activeTag,
   onSelectTag,
 }: {
+  /** null until the catalogue has loaded. */
   challenges: CatalogueChallenge[] | null;
+  /** The catalogue could not be loaded. */
+  failed?: boolean;
+  onRetry?: () => void;
   activeTag: string | null;
   onSelectTag: (tag: string | null) => void;
 }) {
@@ -73,7 +80,18 @@ export default function ChallengesRail({
     <>
       <Panel title="Catalogue">
         {challenges === null ? (
-          <p className="text-[12px] text-dim">Loading…</p>
+          failed ? (
+            <div>
+              <p className="text-[12px] text-dim">The catalogue could not be loaded.</p>
+              {onRetry && (
+                <button type="button" onClick={onRetry} className="btn btn-ghost mt-3 !py-2 !text-[12px]">
+                  <RotateCcw size={13} /> Try again
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-[12px] text-dim">Loading…</p>
+          )
         ) : (
           <>
             <DifficultyRing counts={counts} total={list.length} />

@@ -76,7 +76,9 @@ export default function ChallengesPage() {
   return (
     <AppLayout
       sidebar={<ChallengesSidebar />}
-      rail={<ChallengesRail challenges={catalogue} activeTag={tag} onSelectTag={setTag} />}
+      rail={
+        <ChallengesRail challenges={catalogue} failed={failed} onRetry={retry} activeTag={tag} onSelectTag={setTag} />
+      }
     >
       <header className="flex items-start gap-3">
         <IconBadge tone="blue" size={40}>
