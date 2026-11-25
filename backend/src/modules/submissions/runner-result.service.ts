@@ -155,6 +155,14 @@ export class RunnerResultService {
       });
       if (solve.count !== 1) return base;
 
+      // Lifetime profile counter. Bumped in the same transaction as the
+      // SOLVED transition above, which happens at most once per challenge
+      // per player per match.
+      await tx.userStats.updateMany({
+        where: { userId: submission.userId },
+        data: { challengesSolved: { increment: 1 } },
+      });
+
       const standings = await loadStandings(tx, submission.matchId);
       const mine = standings.players.find((p) => p.userId === submission.userId);
       const finished =

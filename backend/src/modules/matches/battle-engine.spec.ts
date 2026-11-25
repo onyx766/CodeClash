@@ -552,6 +552,8 @@ describe('Five-challenge battle engine', () => {
       expect(row.solveDurationMs).toBe(row.solvedAt.getTime() - h.match(matchId).startedAt.getTime());
       expect(row.bestSubmissionId).toBe(result.submission!.id);
       expect(result.submission!.status).toBe('ACCEPTED');
+      // Lifetime profile counter moves with the solve.
+      expect(h.prisma.rows('userStats').find((r) => r.userId === RYAN)!.challengesSolved).toBe(1);
     });
 
     it('updates both players’ views and emits challenge:solved and match:progress', async () => {
@@ -618,6 +620,7 @@ describe('Five-challenge battle engine', () => {
       expect(h.progress(mcs[0], RYAN)).toMatchObject({ solvedAt, bestSubmissionId: first.id });
       const view = await h.matches.getMatch(matchId, PLAYER(RYAN));
       expect(view.match.me!.solved).toBe(1);
+      expect(h.prisma.rows('userStats').find((r) => r.userId === RYAN)!.challengesSolved).toBe(1);
     });
 
     it('treats a duplicated runner verdict as a no-op', async () => {
