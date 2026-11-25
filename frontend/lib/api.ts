@@ -55,6 +55,9 @@ const NO_REFRESH = /\/auth\/(?:login|register|refresh|logout)\/?(?:[?#]|$)/;
 
 export type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
 
+/** Why a session ended without the player logging out. */
+export type SessionEndReason = 'expired' | 'banned';
+
 let refreshInFlight: Promise<RefreshOutcome> | null = null;
 
 /**
@@ -64,25 +67,35 @@ let refreshInFlight: Promise<RefreshOutcome> | null = null;
  */
 let sessionGeneration = 0;
 
-const expiredListeners = new Set<() => void>();
+const expiredListeners = new Set<(reason: SessionEndReason) => void>();
 const refreshedListeners = new Set<() => void>();
 
-function notify(listeners: Set<() => void>) {
+function notify<Args extends unknown[]>(listeners: Set<(...args: Args) => void>, ...args: Args) {
   listeners.forEach((listener) => {
     try {
-      listener();
+      listener(...args);
     } catch (err) {
       console.error(err);
     }
   });
 }
 
-/** Called when the session can no longer be renewed. Returns an unsubscribe function. */
-export function onSessionExpired(listener: () => void): () => void {
+/** Called when the session can no longer be renewed, with why. Returns an unsubscribe function. */
+export function onSessionExpired(listener: (reason: SessionEndReason) => void): () => void {
   expiredListeners.add(listener);
   return () => {
     expiredListeners.delete(listener);
   };
+}
+
+/**
+ * Ends the session in this tab: every onSessionExpired listener is told, and
+ * the auth provider signs the player out. Deliberately never calls the API:
+ * POST /auth/logout would clear the cookies, which this browser shares with
+ * every other tab - one of which may just have received new ones.
+ */
+export function endSession(reason: SessionEndReason) {
+  notify(expiredListeners, reason);
 }
 
 /**
@@ -96,26 +109,54 @@ export function onSessionRefreshed(listener: () => void): () => void {
   };
 }
 
-/** Renews the session. Concurrent callers share one POST /auth/refresh. */
+type Renewal = { outcome: 'refreshed' | 'unavailable' } | { outcome: 'rejected'; reason: SessionEndReason };
+
+async function errorCodeOf(res: Response): Promise<string | undefined> {
+  try {
+    return ((await res.json()) as ApiErrorBody | null)?.error?.code;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A request that got no answer at all (offline, DNS, refused connection) is null. */
+async function tryFetch(url: string, init: RequestInit): Promise<Response | null> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    return null;
+  }
+}
+
+async function renew(): Promise<Renewal> {
+  const res = await tryFetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  if (res?.ok) return { outcome: 'refreshed' };
+  // 403: the account was banned. No answer, 429 or 5xx is transient and must
+  // never sign anyone out.
+  if (res?.status === 403) {
+    return { outcome: 'rejected', reason: (await errorCodeOf(res)) === 'ACCOUNT_BANNED' ? 'banned' : 'expired' };
+  }
+  // 401: the refresh cookie is missing, expired or revoked.
+  if (res?.status === 401) return { outcome: 'rejected', reason: 'expired' };
+  return { outcome: 'unavailable' };
+}
+
+/**
+ * Renews the session. Concurrent callers share one POST /auth/refresh. A
+ * refused refresh ends the session (see endSession), once; an unavailable one
+ * never does.
+ */
 export function refreshSession(): Promise<RefreshOutcome> {
   if (!refreshInFlight) {
-    refreshInFlight = fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
-      .then((res): RefreshOutcome => {
-        if (res.ok) return 'refreshed';
-        // 401: the refresh cookie is missing, expired or revoked. 403: the
-        // account was banned. Anything else (429, 5xx) is transient and must
-        // not sign anyone out.
-        return res.status === 401 || res.status === 403 ? 'rejected' : 'unavailable';
-      })
-      .catch((): RefreshOutcome => 'unavailable')
-      .then((outcome) => {
-        if (outcome === 'refreshed') {
+    refreshInFlight = renew()
+      .then((renewal) => {
+        if (renewal.outcome === 'refreshed') {
           sessionGeneration += 1;
           notify(refreshedListeners);
-        } else if (outcome === 'rejected') {
-          notify(expiredListeners);
+        } else if (renewal.outcome === 'rejected') {
+          endSession(renewal.reason);
         }
-        return outcome;
+        return renewal.outcome;
       })
       .finally(() => {
         refreshInFlight = null;
@@ -182,7 +223,7 @@ async function request(method: string, path: string, body?: unknown) {
     const { code, message, ...details } = (isJson ? (payload as ApiErrorBody | null)?.error : undefined) ?? {};
     // A ban applies to every request at once; there is nothing left to do
     // with this session.
-    if (renewable && res.status === 403 && code === 'ACCOUNT_BANNED') notify(expiredListeners);
+    if (renewable && res.status === 403 && code === 'ACCOUNT_BANNED') endSession('banned');
     throw new ApiError(res.status, errorMessage(res, renewal, code, message), code, details);
   }
 

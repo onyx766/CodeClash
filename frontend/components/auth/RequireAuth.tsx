@@ -6,7 +6,7 @@ import useAuth from "../../hooks/useAuth";
 import { authHref, currentPathWithQuery, isAuthPage } from "../../lib/navigation";
 
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading, sessionExpired } = useAuth();
+  const { user, loading, sessionEnded } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -14,8 +14,8 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     // Already on the way to the login page (the session just expired).
     if (isAuthPage(window.location.pathname)) return;
     // Keep the query string: invite links (/lobby?code=...) must survive sign-in.
-    router.replace(authHref("/login", currentPathWithQuery(), { expired: sessionExpired }));
-  }, [loading, user, sessionExpired, router]);
+    router.replace(authHref("/login", currentPathWithQuery(), { ended: sessionEnded }));
+  }, [loading, user, sessionEnded, router]);
 
   if (loading || !user) {
     return (

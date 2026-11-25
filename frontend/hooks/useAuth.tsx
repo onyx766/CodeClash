@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth, onSessionExpired, onSessionRefreshed } from "../lib/api";
+import { auth, onSessionExpired, onSessionRefreshed, type SessionEndReason } from "../lib/api";
 import { authHref, currentPathWithQuery, isAuthPage } from "../lib/navigation";
 import { connectSocket, disconnectSocket, recreateSocket } from "../lib/socket";
 
@@ -22,8 +22,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   activeRoom: ActiveRoom | null;
   loading: boolean;
-  /** The last session ended because it could not be renewed (not a logout). */
-  sessionExpired: boolean;
+  /** Why the last session ended, when it was not a logout: it could not be renewed, or the account was banned. */
+  sessionEnded: SessionEndReason | null;
   login: (email: string, password: string) => Promise<{ user: AuthUser; activeRoom: ActiveRoom | null }>;
   register: (email: string, username: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [activeRoom, setActiveRoom] = useState<ActiveRoom | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState<SessionEndReason | null>(null);
   // Read by the session-expiry listener, which outlives any one render.
   const userRef = useRef<AuthUser | null>(null);
 
@@ -86,19 +86,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => onSessionRefreshed(recreateSocket), []);
 
   // The API client could not renew the session (refresh refused or account
-  // banned): sign out here and send the player to the login page, which
-  // brings them back to where they were.
+  // banned): sign out here - locally only, see endSession - and send the
+  // player to the login page, which says why and brings them back to where
+  // they were.
   useEffect(
     () =>
-      onSessionExpired(() => {
+      onSessionExpired((reason) => {
         // A guest's failed /auth/me ends nothing.
         if (!userRef.current) return;
         userRef.current = null;
         setUser(null);
         setActiveRoom(null);
-        setSessionExpired(true);
+        setSessionEnded(reason);
         if (!isAuthPage(window.location.pathname)) {
-          router.replace(authHref("/login", currentPathWithQuery(), { expired: true }));
+          router.replace(authHref("/login", currentPathWithQuery(), { ended: reason }));
         }
       }),
     [router],
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nextActiveRoom = (res.activeRoom ?? null) as ActiveRoom | null;
     setUser(res.user);
     setActiveRoom(nextActiveRoom);
-    setSessionExpired(false);
+    setSessionEnded(null);
     return { user: res.user as AuthUser, activeRoom: nextActiveRoom };
   }, []);
 
@@ -117,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await auth.register(email, username, password);
     setUser(res.user);
     setActiveRoom(null);
-    setSessionExpired(false);
+    setSessionEnded(null);
     return res.user as AuthUser;
   }, []);
 
@@ -164,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       activeRoom,
       loading,
-      sessionExpired,
+      sessionEnded,
       login,
       register,
       logout,
@@ -176,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       activeRoom,
       loading,
-      sessionExpired,
+      sessionEnded,
       login,
       register,
       logout,

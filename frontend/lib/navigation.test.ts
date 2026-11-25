@@ -77,6 +77,12 @@ describe("authHref", () => {
     expect(authHref("/register", "/match/1")).toBe("/register?next=%2Fmatch%2F1");
   });
 
+  it("tells the login page why the last session ended", () => {
+    expect(authHref("/login", "/lobby", { ended: "expired" })).toBe("/login?next=%2Flobby&expired=1");
+    expect(authHref("/login", "/match/1", { ended: "banned" })).toBe("/login?next=%2Fmatch%2F1&banned=1");
+    expect(authHref("/login", "/lobby", { ended: null })).toBe("/login?next=%2Flobby");
+  });
+
   it("leaves out a next that leads nowhere useful", () => {
     expect(authHref("/login")).toBe("/login");
     expect(authHref("/login", "/")).toBe("/login");

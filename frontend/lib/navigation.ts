@@ -33,11 +33,18 @@ export function safeNextPath(raw: string | null | undefined, fallback = "/lobby"
   }
 }
 
-/** `/login` (or `/register`) that returns to `next` afterwards. */
-export function authHref(page: "/login" | "/register", next?: string | null, opts: { expired?: boolean } = {}) {
+/**
+ * `/login` (or `/register`) that returns to `next` afterwards. `ended` says why
+ * the last session ended, for the login page to explain.
+ */
+export function authHref(
+  page: "/login" | "/register",
+  next?: string | null,
+  opts: { ended?: "expired" | "banned" | null } = {},
+) {
   const params = new URLSearchParams();
   if (next && next !== "/" && !AUTH_PAGES.has(next.split("?")[0])) params.set("next", next);
-  if (opts.expired) params.set("expired", "1");
+  if (opts.ended) params.set(opts.ended, "1");
   const query = params.toString();
   return query ? `${page}?${query}` : page;
 }

@@ -16,6 +16,8 @@ export default function LoginPage() {
   const router = useRouter();
   // Only ever a path on this site: never an open redirect.
   const next = safeNextPath(useSearchParam("next"), "");
+  // Why the last session ended, when the app signed the player out itself.
+  const banned = useSearchParam("banned") === "1";
   const expired = useSearchParam("expired") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,12 +49,14 @@ export default function LoginPage() {
       <div className="card p-6 sm:p-7">
         <AuthCardHeader title="Sign in" subtitle="Enter your details to access your account." />
 
-        {expired && !error && (
+        {(banned || expired) && !error && (
           <p
-            role="status"
-            className="mt-5 rounded-lg border border-blue/30 bg-blue/10 px-3 py-2 text-[12.5px] text-blue-200"
+            role={banned ? "alert" : "status"}
+            className={`mt-5 rounded-lg border px-3 py-2 text-[12.5px] ${
+              banned ? "border-rose/30 bg-rose/10 text-rose-300" : "border-blue/30 bg-blue/10 text-blue-200"
+            }`}
           >
-            Your session has expired. Please sign in again.
+            {banned ? "This account has been suspended." : "Your session has expired. Please sign in again."}
           </p>
         )}
 

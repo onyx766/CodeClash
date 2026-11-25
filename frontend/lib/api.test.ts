@@ -79,6 +79,7 @@ function fakeServer() {
 let server: ReturnType<typeof fakeServer>["server"];
 let api: typeof import("./api");
 let expired: number;
+let reasons: string[];
 let refreshed: number;
 
 beforeEach(async () => {
@@ -89,9 +90,11 @@ beforeEach(async () => {
   vi.resetModules();
   api = await import("./api");
   expired = 0;
+  reasons = [];
   refreshed = 0;
-  api.onSessionExpired(() => {
+  api.onSessionExpired((reason) => {
     expired += 1;
+    reasons.push(reason);
   });
   api.onSessionRefreshed(() => {
     refreshed += 1;
@@ -170,7 +173,7 @@ describe("session renewal", () => {
     const results = await Promise.allSettled([api.auth.me(), api.matches.active(), api.profile.me()]);
 
     expect(refreshCalls()).toBe(1);
-    expect(expired).toBe(1);
+    expect(reasons).toEqual(["expired"]);
     for (const result of results) {
       expect(result).toMatchObject({
         status: "rejected",
@@ -200,7 +203,7 @@ describe("session renewal", () => {
     server.banned = true;
 
     await expect(api.matches.active()).rejects.toMatchObject({ status: 403, code: "ACCOUNT_BANNED" });
-    expect(expired).toBe(1);
+    expect(reasons).toEqual(["banned"]);
     expect(refreshCalls()).toBe(0);
   });
 
@@ -209,7 +212,14 @@ describe("session renewal", () => {
     server.refreshAnswer = 403;
 
     await expect(api.matches.active()).rejects.toMatchObject({ status: 401 });
-    expect(expired).toBe(1);
+    expect(reasons).toEqual(["banned"]);
+  });
+
+  it("ends a session locally, without calling the API", () => {
+    api.endSession("banned");
+
+    expect(reasons).toEqual(["banned"]);
+    expect(server.calls).toEqual([]);
   });
 });
 

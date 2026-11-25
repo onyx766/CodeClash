@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { refreshSession } from './api';
+import { endSession, refreshSession } from './api';
 
 // See lib/api.ts getApiBase() for why this derives from window.location
 // instead of trusting a hardcoded env var.
@@ -18,6 +18,14 @@ function getWsUrl() {
  * signed-in user changes, drops it on logout, and recreates it after every
  * session refresh. Components read the current instance with useSocket() and
  * re-attach their listeners when it changes.
+ *
+ * A handshake the server will not authenticate - expired access cookie,
+ * revoked session, banned account - is refused with connect_error, and a live
+ * socket is disconnected ("io server disconnect") on a ban, a password reset
+ * or a password change. socket.io retries neither, so both are recovered here:
+ * renew the session, then connect a new socket. Servers from before the
+ * handshake check accept such a socket and disconnect it at once, which takes
+ * the same path. Transport errors are left to socket.io's own reconnection.
  */
 
 let socket: Socket | null = null;
@@ -83,10 +91,22 @@ function create(userId: string) {
     if (socket !== s) return;
     if (stableTimer) clearTimeout(stableTimer);
     stableTimer = null;
-    // The server only disconnects a socket itself when its handshake was not
-    // authenticated (missing or expired access cookie, revoked session, ban),
-    // and socket.io never retries that on its own.
+    // The server closed this socket: its session ended or changed (ban,
+    // password reset or change), or - on servers that authenticate after
+    // connecting - the handshake was not authenticated.
     if (reason === 'io server disconnect') scheduleRecovery(s);
+  });
+  s.on('connect_error', (err: Error & { data?: { code?: string } }) => {
+    if (socket !== s) return;
+    // Server unreachable or the connection dropped: socket.io keeps retrying
+    // by itself while the socket is active.
+    if (s.active) return;
+    // The server refused the handshake, and socket.io gives up on such a
+    // socket. A ban ends the session; UNAUTHENTICATED and SESSION_REVOKED -
+    // or anything unexpected - are renewed and retried, with backoff.
+    const code = err.data?.code ?? err.message;
+    if (code === 'ACCOUNT_BANNED') endSession('banned');
+    else scheduleRecovery(s);
   });
   socket = s;
   ownerId = userId;
@@ -158,10 +178,11 @@ export type ChannelAck = { ok?: boolean; error?: string };
 
 /**
  * Subscribes to a server channel (room:join, match:join) and reports the ack.
- * The server binds a socket to its user asynchronously after the handshake,
- * so a join sent the moment the socket connects can be refused with
- * INVALID_REQUEST; that is retried a few times. Returns a function that stops
- * any further retries.
+ * A server that authenticates sockets after connecting binds a socket to its
+ * user asynchronously, so a join sent the moment the socket connects can be
+ * refused with INVALID_REQUEST; that is retried a few times. (A server that
+ * authenticates the handshake has bound the user before "connect" fires.)
+ * Returns a function that stops any further retries.
  */
 export function joinChannel(
   s: Socket,
