@@ -107,12 +107,15 @@ export function Tag({
 }
 
 export function Panel({
+  id,
   title,
   action,
   children,
   className = "",
   bodyClassName = "",
 }: {
+  /** Makes the panel a link target, e.g. /profile#match-history. */
+  id?: string;
   title?: React.ReactNode;
   action?: React.ReactNode;
   children: React.ReactNode;
@@ -120,7 +123,7 @@ export function Panel({
   bodyClassName?: string;
 }) {
   return (
-    <section className={`card ${className}`}>
+    <section id={id} className={`card ${className}`}>
       {title && (
         <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
           <h2 className="rail-title">{title}</h2>
