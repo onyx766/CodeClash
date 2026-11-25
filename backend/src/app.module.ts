@@ -125,6 +125,7 @@ import { AppService } from './app.service';
     require('./modules/rating/rating.module').RatingModule,
     require('./modules/runner/runner.module').RunnerModule,
     require('./modules/jobs/jobs.module').JobsModule,
+    require('./modules/health/health.module').HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
