@@ -213,6 +213,37 @@ describe('AuthService', () => {
 
       await expect(service.refresh(tokens.accessToken)).rejects.toThrow();
     });
+
+    it('rejects a refresh token issued before the sessions were revoked', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      // e.g. an admin reset the password a minute after this token was issued
+      usersService.findById.mockResolvedValue({
+        ...baseUser,
+        sessionsRevokedAt: new Date(Date.now() + 60_000),
+      } as never);
+
+      await expect(service.refresh(tokens.refreshToken)).rejects.toThrow(
+        'Invalid or expired refresh token',
+      );
+    });
+
+    it('still refreshes tokens issued after an earlier revocation', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      usersService.findById.mockResolvedValue({
+        ...baseUser,
+        sessionsRevokedAt: new Date(Date.now() - 60 * 60_000),
+      } as never);
+
+      await expect(service.refresh(tokens.refreshToken)).resolves.toMatchObject({
+        user: { id: baseUser.id },
+      });
+    });
   });
 
   describe('geolocation enrichment', () => {

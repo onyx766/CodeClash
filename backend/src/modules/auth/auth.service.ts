@@ -16,6 +16,7 @@ import {
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
 import { UsersService } from '../users/users.service';
+import { isTokenRevoked } from './session-revocation.util';
 import { GeolocationService } from '../geolocation/geolocation.service';
 import {
   AccessTokenPayload,
@@ -31,6 +32,7 @@ interface UserPublicFields {
   role: Role;
   createdAt: Date;
   status: UserStatus;
+  sessionsRevokedAt?: Date | null;
 }
 
 @Injectable()
@@ -139,6 +141,14 @@ export class AuthService {
     // cannot be traded for a fresh access token after the account is banned.
     if (record.status === UserStatus.BANNED) {
       throw new AccountBannedException();
+    }
+
+    // Revoking a user's sessions (e.g. an admin password reset) must end
+    // them for good: a refresh token issued before that point cannot be
+    // exchanged for new tokens, just as the JWT strategy rejects such an
+    // access token.
+    if (isTokenRevoked(payload.iat, record.sessionsRevokedAt)) {
+      throw new UnauthenticatedException('Invalid or expired refresh token');
     }
 
     const tokens = this.generateTokens(record);
