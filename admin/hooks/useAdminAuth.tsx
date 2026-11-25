@@ -153,15 +153,20 @@ function loginRedirect(): string {
 export function postLoginPath(): string | null {
   const next = new URLSearchParams(window.location.search).get("next");
   if (!next || !next.startsWith("/")) return null;
-  let target: URL;
+  const origin = window.location.origin;
   try {
-    target = new URL(next, window.location.origin);
+    const target = new URL(next, origin);
+    if (target.origin !== origin) return null;
+    if (target.pathname.startsWith("/login")) return null;
+    const path = `${target.pathname}${target.search}${target.hash}`;
+    // Dot segments can collapse into a leading "//" ("/.//evil.example" has
+    // the pathname "//evil.example"), which the router would then read as a
+    // protocol-relative URL. Check the exact value that is handed over.
+    if (new URL(path, origin).origin !== origin) return null;
+    return path;
   } catch {
     return null;
   }
-  if (target.origin !== window.location.origin) return null;
-  if (target.pathname.startsWith("/login")) return null;
-  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 /**
