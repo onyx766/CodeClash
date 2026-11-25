@@ -126,7 +126,11 @@ function createRealm(outputLimitBytes) {
   // or read the hidden expectations in job.json. So console, the CommonJS
   // shell, the output counter and the bridge are all created by code evaluated
   // inside the realm, and only primitives (strings/numbers) cross the boundary.
-  const context = vm.createContext(Object.create(null));
+  //
+  // microtaskMode 'afterEvaluate' drains promise jobs inside each evaluation,
+  // under its timeout; otherwise a self-scheduling promise chain would run
+  // after the call returned, outside any per-test limit.
+  const context = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' });
 
   vm.runInContext(
     `(function (limit) {
