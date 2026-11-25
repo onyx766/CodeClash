@@ -55,7 +55,7 @@ const FEATURES = [
 ] as const;
 
 const PLAYER_APP_URL =
-  process.env.NEXT_PUBLIC_PLAYER_APP_URL ?? "http://localhost:3000";
+  process.env.NEXT_PUBLIC_PLAYER_APP_URL || "http://localhost:3000";
 
 export default function AdminLoginPage() {
   const router = useRouter();
