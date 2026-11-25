@@ -11,7 +11,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHmac } from 'crypto';
 
 const execAsync = util.promisify(exec);
-const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: Number(process.env.REDIS_PORT) || 6379,
+});
 
 /**
  * Waits for a job's result on a dedicated connection. BRPOP blocks the

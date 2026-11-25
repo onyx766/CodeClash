@@ -7,7 +7,10 @@ import os from 'os';
 import express from 'express';
 import { createHmac } from 'crypto';
 
-const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: Number(process.env.REDIS_PORT) || 6379,
+});
 /**
  * Jobs this worker runs at the same time. Each job container is capped at half
  * a CPU, so a couple per worker keeps simultaneous submissions from queueing
