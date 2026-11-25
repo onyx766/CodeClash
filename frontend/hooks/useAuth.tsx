@@ -28,6 +28,8 @@ type AuthContextValue = {
   register: (email: string, username: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   clearActiveRoom: () => void;
+  /** Re-reads the player's open room from the server, e.g. after a match ended. */
+  refreshActiveRoom: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -131,9 +133,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveRoom(null);
   }, []);
 
+  const refreshActiveRoom = useCallback(async () => {
+    try {
+      const res = await auth.me();
+      setActiveRoom((res.activeRoom ?? null) as ActiveRoom | null);
+    } catch {
+      // Keep what we have; a failed read must not drop the player's room.
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom }),
-    [user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom],
+    () => ({
+      user,
+      activeRoom,
+      loading,
+      sessionExpired,
+      login,
+      register,
+      logout,
+      clearActiveRoom,
+      refreshActiveRoom,
+    }),
+    [user, activeRoom, loading, sessionExpired, login, register, logout, clearActiveRoom, refreshActiveRoom],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

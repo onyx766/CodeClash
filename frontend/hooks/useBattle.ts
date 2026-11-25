@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, matches as matchesApi } from "../lib/api";
 import { joinChannel, onEveryConnect } from "../lib/socket";
-import type { BattleMatch, ChallengeStatement } from "../lib/battle";
+import type { BattleMatch, ChallengeStatement, MatchStatus } from "../lib/battle";
+import { recallMatchFound, type MatchFoundPayload } from "../lib/matchmaking";
 import useSocket from "./useSocket";
 
 // Every one of these only means "something changed" - the handler refetches
 // GET /matches/:id rather than trusting the payload, so a missed or duplicated
-// event can never leave the page showing the wrong score.
+// event can never leave the page showing the wrong score. match:started comes
+// on the player's own channel when both players have accepted a Quick Match.
 const LIVE_EVENTS = [
+  "match:started",
   "match:progress",
   "challenge:solved",
   "challenge:attempting",
@@ -17,6 +20,12 @@ const LIVE_EVENTS = [
   "match:finished",
   "match:cancelled",
 ] as const;
+
+/** Statuses of a match that has not started yet (a Quick Match ready check). */
+export const AWAITING_START: MatchStatus[] = ["PENDING", "PENDING_READY", "READY"];
+
+/** How a Quick Match ready check ended, as far as this player was told. */
+export type ReadyCheckEnd = "cancelled" | "opponent-unavailable";
 
 export type BattleLoadError = { status: number; code?: string; message: string };
 
@@ -34,6 +43,12 @@ export function useBattle(matchId: string) {
   const [live, setLive] = useState(false);
   // serverTime - local time, so the countdown follows the server's clock.
   const [clockSkewMs, setClockSkewMs] = useState(0);
+  // GET /matches/:id has no ready deadline; the match-found event does.
+  const [foundDeadline, setFoundDeadline] = useState<string | null>(
+    () => recallMatchFound(matchId)?.readyDeadline ?? null,
+  );
+  const [readyCheckEnd, setReadyCheckEnd] = useState<ReadyCheckEnd | null>(null);
+  const [statementsAttempt, setStatementsAttempt] = useState(0);
 
   const refresh = useCallback((): Promise<BattleMatch | null> => {
     const sentAt = Date.now();
@@ -60,19 +75,41 @@ export function useBattle(matchId: string) {
     void refresh();
   }, [refresh]);
 
-  // Problem statements never change during a match - load them once.
+  // Problem statements never change during a match, but a Quick Match only
+  // gets its challenge set once both players have accepted. Load them as soon
+  // as the match has challenges, and keep retrying until that succeeds.
+  const challengeCount = match?.challenges.length ?? 0;
+  const statementsLoaded = (statements?.length ?? 0) > 0;
   useEffect(() => {
+    if (challengeCount === 0 || statementsLoaded) return;
     let cancelled = false;
-    matchesApi
-      .challenges(matchId)
-      .then((res: { challenges: ChallengeStatement[] }) => {
-        if (!cancelled) setStatements(res.challenges);
-      })
-      .catch(() => undefined);
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const retryLater = () => {
+      retry = setTimeout(() => setStatementsAttempt((n) => n + 1), 2000);
+    };
+    matchesApi.challenges(matchId).then(
+      (res: { challenges: ChallengeStatement[] }) => {
+        if (cancelled) return;
+        if (res.challenges.length > 0) setStatements(res.challenges);
+        else retryLater();
+      },
+      () => {
+        if (!cancelled) retryLater();
+      },
+    );
     return () => {
       cancelled = true;
+      if (retry) clearTimeout(retry);
     };
-  }, [matchId]);
+  }, [matchId, challengeCount, statementsLoaded, statementsAttempt]);
+
+  // The ready check only lasts seconds: follow it closely, whatever the socket does.
+  const awaitingStart = !!match && AWAITING_START.includes(match.status);
+  useEffect(() => {
+    if (!awaitingStart) return;
+    const id = setInterval(() => void refresh(), 2000);
+    return () => clearInterval(id);
+  }, [awaitingStart, refresh]);
 
   useEffect(() => {
     if (!socket) return;
@@ -88,17 +125,36 @@ export function useBattle(matchId: string) {
       if (payload?.matchId && payload.matchId !== matchId) return;
       void refresh();
     };
+    // Quick Match ready check, on the player's own channel.
+    const onFound = (payload?: MatchFoundPayload) => {
+      if (payload?.matchId === matchId && payload.readyDeadline) setFoundDeadline(payload.readyDeadline);
+    };
+    const readyCheckEnded = (end: ReadyCheckEnd) => (payload?: { matchId?: string }) => {
+      if (payload?.matchId !== matchId) return;
+      setReadyCheckEnd(end);
+      void refresh();
+    };
+    const onCancelled = readyCheckEnded("cancelled");
+    const onOpponentUnavailable = readyCheckEnded("opponent-unavailable");
 
     socket.on("disconnect", onDisconnect);
     LIVE_EVENTS.forEach((event) => socket.on(event, onEvent));
+    socket.on("matchmaking:match-found", onFound);
+    socket.on("matchmaking:cancelled", onCancelled);
+    socket.on("matchmaking:opponent-unavailable", onOpponentUnavailable);
     return () => {
       stopConnect();
       stopJoin();
       if (socket.connected) socket.emit("match:leave", { matchId });
       socket.off("disconnect", onDisconnect);
       LIVE_EVENTS.forEach((event) => socket.off(event, onEvent));
+      socket.off("matchmaking:match-found", onFound);
+      socket.off("matchmaking:cancelled", onCancelled);
+      socket.off("matchmaking:opponent-unavailable", onOpponentUnavailable);
     };
   }, [socket, matchId, refresh]);
 
-  return { match, statements, error, live, clockSkewMs, refresh };
+  const readyDeadline = match?.readyDeadline ?? foundDeadline;
+
+  return { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd };
 }

@@ -83,6 +83,8 @@ export interface BattleMatch {
   resultType: "WIN" | "DRAW" | null;
   winnerId: string | null;
   serverTime: string;
+  /** Quick Match ready check: accept before this. Not every API version sends it. */
+  readyDeadline?: string | null;
   viewer: "PARTICIPANT" | "SPECTATOR";
   me: BattlePlayer | null;
   opponent: BattlePlayer | null;

@@ -7,7 +7,9 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ExternalLink, Flag, Maximize2, Minimize2, Play, Upload } from "lucide-react";
 import { ApiError, matches as matchesApi } from "../../../lib/api";
-import { useBattle } from "../../../hooks/useBattle";
+import { AWAITING_START, useBattle } from "../../../hooks/useBattle";
+import useAuth from "../../../hooks/useAuth";
+import useProfile from "../../../hooks/useProfile";
 import { VERDICT_LABEL, type SubmitResponse, type TestRunResult } from "../../../lib/battle";
 import {
   Countdown,
@@ -23,6 +25,7 @@ import {
   TestCasesPanel,
   type Outcome,
 } from "../../../components/battle/BattlePanels";
+import { ReadyCheck } from "../../../components/battle/ReadyCheck";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -56,7 +59,9 @@ const STATUS_LABEL: Record<string, string> = {
 export default function MatchPage() {
   const params = useParams();
   const matchId = params.matchId as string;
-  const { match, statements, error, live, clockSkewMs, refresh } = useBattle(matchId);
+  const { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd } = useBattle(matchId);
+  const { refreshActiveRoom } = useAuth();
+  const { refetch: refetchProfile } = useProfile();
 
   // The challenge the player clicked (remembered per tab). Which challenge is
   // open is purely client state - players may work in any order.
@@ -81,6 +86,15 @@ export default function MatchPage() {
   }, [match?.expiresAt, clockSkewMs]);
 
   const inProgress = match?.status === "IN_PROGRESS";
+  const finished = match?.status === "FINISHED" || match?.status === "CANCELLED";
+
+  // Once the match is over its room is finished too: stop routing the player
+  // back to it, and pick up the new rating and records.
+  useEffect(() => {
+    if (!finished) return;
+    void refreshActiveRoom();
+    void refetchProfile();
+  }, [finished, refreshActiveRoom, refetchProfile]);
 
   // The server resolves an expired match within a few seconds; poll until it
   // has. Also poll while the socket is down, so the page never goes stale.
@@ -221,7 +235,20 @@ export default function MatchPage() {
     );
   }
 
-  const over = match.status === "FINISHED" || match.status === "CANCELLED";
+  // Quick Match ready check, or a match called off before it began.
+  if (AWAITING_START.includes(match.status) || (match.status === "CANCELLED" && !match.startedAt)) {
+    return (
+      <ReadyCheck
+        match={match}
+        readyDeadline={readyDeadline}
+        skewMs={clockSkewMs}
+        readyCheckEnd={readyCheckEnd}
+        refresh={refresh}
+      />
+    );
+  }
+
+  const over = finished;
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
