@@ -73,7 +73,9 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): Prom
 }
 
 const app = express();
-app.use(bodyParser.json());
+// A judge payload carries up to 200 test cases of up to 64 KB of input and
+// 64 KB of expected output each (see backend challenge.constants.ts).
+app.use(bodyParser.json({ limit: process.env.RUNNER_BODY_LIMIT || '32mb' }));
 
 // Health endpoint
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -267,6 +269,18 @@ function memoryOrTimeVerdict(jobId: string, job: any, status: string, message: s
     runtimeMs: 0,
   };
 }
+
+/**
+ * Malformed or oversized request bodies are rejected by body-parser before any
+ * route runs; answer with the same signed JSON envelope as every verdict so
+ * the API reports the real reason instead of failing to parse an HTML page.
+ */
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!err) return next();
+  const status = typeof err.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const error = err.type === 'entity.too.large' ? 'Judge payload is too large.' : 'Invalid judge request body.';
+  return sendSigned(res, status, { ok: false, error });
+});
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
