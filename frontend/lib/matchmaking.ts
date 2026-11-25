@@ -1,5 +1,7 @@
 // Quick Match shapes (backend/src/modules/matchmaking/matchmaking.types.ts).
 
+import type { BattleMatch } from "./battle";
+
 export type RatingRange = { min: number; max: number };
 
 export type MatchmakingState =
@@ -28,10 +30,25 @@ export type MatchFoundPayload = {
 /** POST /matches/:id/ready */
 export type ReadyResponse = { matchId: string; status: string };
 
+/**
+ * Who has accepted a Quick Match ready check, from everything the battle page
+ * knows: the players' `ready` flags in GET /matches/:id (which survive a
+ * reload), the match:ready events, and the accept this tab just made.
+ */
+export function readyCheckAcceptance(
+  match: Pick<BattleMatch, "me" | "opponent">,
+  announced: string[],
+  acceptedHere = false,
+): { me: boolean; opponent: boolean } {
+  const accepted = (player: BattleMatch["me"]) => !!player && (player.ready === true || announced.includes(player.id));
+  return { me: acceptedHere || accepted(match.me), opponent: accepted(match.opponent) };
+}
+
 const foundKey = (matchId: string) => `cc:match-found:${matchId}`;
 
-// GET /matches/:id does not carry the ready deadline, so the battle page reads
-// it from the match-found event the lobby received. Kept for the tab only.
+// Older API versions leave the ready deadline out of GET /matches/:id, so the
+// battle page falls back to the one in the match-found event the lobby
+// received. Kept for the tab only.
 export function rememberMatchFound(payload: MatchFoundPayload) {
   try {
     window.sessionStorage.setItem(foundKey(payload.matchId), JSON.stringify(payload));

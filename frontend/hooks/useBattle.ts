@@ -43,13 +43,14 @@ export function useBattle(matchId: string) {
   const [live, setLive] = useState(false);
   // serverTime - local time, so the countdown follows the server's clock.
   const [clockSkewMs, setClockSkewMs] = useState(0);
-  // GET /matches/:id has no ready deadline; the match-found event does.
+  // The ready deadline from the match-found event, for API versions whose
+  // GET /matches/:id does not send match.readyDeadline.
   const [foundDeadline, setFoundDeadline] = useState<string | null>(
     () => recallMatchFound(matchId)?.readyDeadline ?? null,
   );
   const [readyCheckEnd, setReadyCheckEnd] = useState<ReadyCheckEnd | null>(null);
-  // Players who accepted the ready check, from match:ready (GET /matches/:id
-  // does not say who has accepted).
+  // Players announced by match:ready as they accept the ready check. GET
+  // /matches/:id says so too (each player's `ready`), but only when re-read.
   const [acceptedBy, setAcceptedBy] = useState<string[]>([]);
   const [statementsAttempt, setStatementsAttempt] = useState(0);
   // Polls, socket events and the player's own actions all re-read the match,

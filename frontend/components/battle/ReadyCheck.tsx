@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Check, Gem, Swords, X, Zap } from "lucide-react";
 import { ApiError, matches as matchesApi } from "../../lib/api";
 import type { BattleMatch, BattlePlayer } from "../../lib/battle";
+import { readyCheckAcceptance } from "../../lib/matchmaking";
 import type { ReadyCheckEnd } from "../../hooks/useBattle";
 import useNow, { formatElapsed } from "../../hooks/useNow";
 import useQuickMatch from "../../hooks/useQuickMatch";
@@ -46,7 +47,6 @@ function WaitingToStart({
   readyDeadline,
   skewMs,
   accepted,
-  acceptedBy,
   accepting,
   error,
   onAccept,
@@ -54,9 +54,8 @@ function WaitingToStart({
   match: BattleMatch;
   readyDeadline: string | null;
   skewMs: number;
-  accepted: boolean;
-  /** Players the server announced as accepted (match:ready). */
-  acceptedBy: string[];
+  /** Who has accepted so far. */
+  accepted: { me: boolean; opponent: boolean };
   accepting: boolean;
   error: string | null;
   onAccept: () => void;
@@ -81,7 +80,7 @@ function WaitingToStart({
         <Spinner /> Both players accepted - starting the match…
       </p>
     );
-  } else if (accepted) {
+  } else if (accepted.me) {
     body = (
       <p className="flex items-center justify-center gap-2 text-[14px] text-muted">
         <Check size={16} className="text-emerald-400" /> Accepted. Waiting for {opponentName}…
@@ -123,16 +122,12 @@ function WaitingToStart({
       )}
 
       <div className="mt-6 flex items-start justify-center gap-4">
-        <Contender
-          player={match.me}
-          label={match.viewer === "SPECTATOR" ? "Player" : "You"}
-          accepted={match.viewer === "SPECTATOR" ? !!match.me && acceptedBy.includes(match.me.id) : accepted}
-        />
+        <Contender player={match.me} label={match.viewer === "SPECTATOR" ? "Player" : "You"} accepted={accepted.me} />
         <span className="mt-6 text-[22px] font-light italic text-dim">VS</span>
         <Contender
           player={match.opponent}
           label={match.viewer === "SPECTATOR" ? "Player" : "Opponent"}
-          accepted={!!match.opponent && acceptedBy.includes(match.opponent.id)}
+          accepted={accepted.opponent}
         />
       </div>
 
@@ -246,9 +241,9 @@ export function ReadyCheck({
   refresh: () => Promise<unknown>;
 }) {
   const [acceptedHere, setAcceptedHere] = useState(false);
-  // Also true when the accept came from another tab of this player.
-  const accepted =
-    acceptedHere || (match.viewer === "PARTICIPANT" && !!match.me && acceptedBy.includes(match.me.id));
+  // Also covers an accept from another tab of this player, or from before a
+  // reload: the server reports it.
+  const accepted = readyCheckAcceptance(match, acceptedBy, acceptedHere);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -285,14 +280,13 @@ export function ReadyCheck({
       <main className="flex flex-1 items-center justify-center p-4">
         <section className="card w-full max-w-[560px] p-6 text-center sm:p-8" aria-live="polite">
           {match.status === "CANCELLED" ? (
-            <CancelledBeforeStart match={match} accepted={accepted} readyCheckEnd={readyCheckEnd} />
+            <CancelledBeforeStart match={match} accepted={accepted.me} readyCheckEnd={readyCheckEnd} />
           ) : (
             <WaitingToStart
               match={match}
               readyDeadline={readyDeadline}
               skewMs={skewMs}
               accepted={accepted}
-              acceptedBy={acceptedBy}
               accepting={accepting}
               error={error}
               onAccept={() => void accept()}

@@ -41,6 +41,8 @@ export interface BattlePlayer {
   total: number;
   totalSolveDurationMs: number;
   gaveUp: boolean;
+  /** Quick Match ready check: true once this player accepted. Not every API version sends it. */
+  ready?: boolean;
 }
 
 export interface BattleChallenge {
