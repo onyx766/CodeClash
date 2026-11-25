@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAdminAuth } from "../hooks/useAdminAuth";
+import { useRequireAdmin } from "../hooks/useAdminAuth";
 import { challengeService } from "../services/challenge.service";
 import { AdminShell } from "../components/layout/AdminShell";
 import { Badge, Button, Card, cx } from "../components/ui/Primitives";
@@ -23,14 +22,8 @@ import type { AdminChallengeSummary } from "../lib/types";
  * summarise sections that do not exist yet.
  */
 export default function AdminHomePage() {
-  const { user, loading, isAdmin } = useAdminAuth();
-  const router = useRouter();
+  const { user, loading, isAdmin } = useRequireAdmin();
   const [rows, setRows] = useState<AdminChallengeSummary[] | null>(null);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user || !isAdmin) router.replace("/login");
-  }, [loading, user, isAdmin, router]);
 
   useEffect(() => {
     if (!isAdmin) return;

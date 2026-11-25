@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError } from "../../lib/api";
-import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { postLoginPath, useAdminAuth } from "../../hooks/useAdminAuth";
 import {
   Button,
   Checkbox,
@@ -14,6 +14,7 @@ import {
 import {
   IconAlert,
   IconArrowRight,
+  IconClock,
   IconEye,
   IconEyeOff,
   IconExternal,
@@ -59,7 +60,7 @@ const PLAYER_APP_URL =
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { login, user, isAdmin, loading } = useAdminAuth();
+  const { login, user, isAdmin, loading, sessionExpired } = useAdminAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -70,7 +71,9 @@ export default function AdminLoginPage() {
 
   // Already signed in with a privileged account? Skip the form.
   useEffect(() => {
-    if (!loading && user && isAdmin) router.replace("/challenges/create");
+    if (!loading && user && isAdmin) {
+      router.replace(postLoginPath() ?? "/challenges/create");
+    }
   }, [loading, user, isAdmin, router]);
 
   const handleSubmit = async (event: FormEvent) => {
@@ -94,7 +97,7 @@ export default function AdminLoginPage() {
         );
         return;
       }
-      router.replace("/challenges/create");
+      router.replace(postLoginPath() ?? "/challenges/create");
     } catch (caught) {
       setError(
         caught instanceof ApiError
@@ -208,6 +211,16 @@ export default function AdminLoginPage() {
             </p>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+              {sessionExpired && !error ? (
+                <Notice tone="amber">
+                  <span className="flex items-start gap-2">
+                    <IconClock size={15} className="mt-px shrink-0" />
+                    Your session has expired. Sign in again to continue where
+                    you left off.
+                  </span>
+                </Notice>
+              ) : null}
+
               {error ? (
                 <Notice tone="rose">
                   <span className="flex items-start gap-2">
