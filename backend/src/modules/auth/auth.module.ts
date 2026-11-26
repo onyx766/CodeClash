@@ -6,9 +6,10 @@ import { GeolocationModule } from '../geolocation/geolocation.module';
 import { RoomsModule } from '../rooms/rooms.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { SocketModule } from '../../socket/socket.module';
 
 @Module({
-  imports: [UsersModule, GeolocationModule, RoomsModule, JwtModule.register({})],
+  imports: [UsersModule, GeolocationModule, RoomsModule, SocketModule, JwtModule.register({})],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
   exports: [AuthService],

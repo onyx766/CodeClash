@@ -374,6 +374,26 @@ export function draftToPayload(draft: ChallengeDraft): UpsertChallengePayload {
 }
 
 /**
+ * Editor draft -> PATCH payload for a PUBLISHED challenge.
+ *
+ * A published challenge only accepts presentational edits; its contract,
+ * judge, limits and tests are what live matches are scored against. Those
+ * fields are left out entirely rather than echoed back, so the server never
+ * sees a judging change (and never answers CHALLENGE_LOCKED) for a title or
+ * description fix. The slug stays as published.
+ */
+export function draftToPresentationPayload(
+  draft: ChallengeDraft,
+): UpsertChallengePayload {
+  return {
+    title: draft.title.trim(),
+    description: draft.description,
+    difficulty: draft.difficulty,
+    tags: draft.tags,
+  };
+}
+
+/**
  * Client-side pre-flight. Purely for immediate feedback in the form - the
  * server runs its own version of every one of these and is the authority.
  */

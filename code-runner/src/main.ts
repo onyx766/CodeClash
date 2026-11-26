@@ -11,7 +11,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { createHmac } from 'crypto';
 
 const execAsync = util.promisify(exec);
-const redis = new Redis({ host: process.env.REDIS_HOST || 'redis' });
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: Number(process.env.REDIS_PORT) || 6379,
+});
+
+/**
+ * Waits for a job's result on a dedicated connection. BRPOP blocks the
+ * connection it runs on, so issuing it on the shared client would stall every
+ * other command (other requests' enqueues, /ready's PING) until this job
+ * finished.
+ */
+async function waitForResult(jobId: string, timeoutSeconds: number): Promise<[string, string] | null> {
+  const waiter = redis.duplicate();
+  try {
+    return (await waiter.brpop(`code_results:${jobId}`, timeoutSeconds)) as [string, string] | null;
+  } finally {
+    waiter.disconnect();
+  }
+}
 
 /** Same secret and sources as the worker's /jobs/record signature. */
 function loadRunnerSecret(): string | undefined {
@@ -58,7 +76,9 @@ async function retry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): Prom
 }
 
 const app = express();
-app.use(bodyParser.json());
+// A judge payload carries up to 200 test cases of up to 64 KB of input and
+// 64 KB of expected output each (see backend challenge.constants.ts).
+app.use(bodyParser.json({ limit: process.env.RUNNER_BODY_LIMIT || '32mb' }));
 
 // Health endpoint
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -73,15 +93,6 @@ app.get('/ready', async (_req, res) => {
     return res.status(503).json({ ready: false, error: String(e) });
   }
 });
-
-/**
- * Copies the v1 executor into a job directory. It lives in
- * src/executor/legacy-executor.js rather than inline here so its own backticks
- * cannot break this file.
- */
-async function writeExecutor(dir: string) {
-  await fs.copyFile(resolveExecutor('legacy-executor.js'), path.join(dir, 'executor.js'));
-}
 
 /**
  * Absolute path to an executor script that gets copied into a job directory.
@@ -139,6 +150,10 @@ app.post('/v2/judge', async (req, res) => {
   const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
   try { await fs.mkdir(baseDir, { recursive: true }); } catch (e) {}
   const tmp = await fs.mkdtemp(path.join(baseDir, 'judge-'));
+  // mkdtemp creates the directory 0700; the sandbox reads it as an
+  // unprivileged uid, so it must be world-readable (it holds no secrets that
+  // the job itself is not given anyway).
+  await fs.chmod(tmp, 0o755);
   const jobId = uuidv4();
 
   const limits = job.limits || {};
@@ -186,7 +201,7 @@ app.post('/v2/judge', async (req, res) => {
     const waitSeconds = Math.ceil(hardTimeoutMs / 1000) + 15;
     let popped: [string, string] | null = null;
     try {
-      popped = (await redis.brpop(`code_results:${jobId}`, waitSeconds)) as [string, string] | null;
+      popped = await waitForResult(jobId, waitSeconds);
     } catch (e) {
       return sendSigned(res, 504, { ok: false, jobId, error: 'error waiting for runner' });
     }
@@ -258,63 +273,16 @@ function memoryOrTimeVerdict(jobId: string, job: any, status: string, message: s
   };
 }
 
-app.post('/run', async (req, res) => {
-  const { code, testCases, functionName, timeLimitSeconds, metadata } = req.body || {};
-  if (!code || !Array.isArray(testCases)) return res.status(400).json({ error: 'Invalid payload' });
-
-  const baseDir = process.env.SHARED_WORKDIR || '/work_shared';
-  try { await fs.mkdir(baseDir, { recursive: true }); } catch (e) {}
-  const tmp = await fs.mkdtemp(path.join(baseDir, 'code-runner-'));
-  const jobId = uuidv4();
-  try {
-    await fs.writeFile(path.join(tmp, 'code.js'), code, 'utf8');
-    await fs.writeFile(path.join(tmp, 'tests.json'), JSON.stringify(testCases), 'utf8');
-    if (functionName) await fs.writeFile(path.join(tmp, 'functionName.txt'), functionName, 'utf8');
-    if (timeLimitSeconds) await fs.writeFile(path.join(tmp, 'timeLimit.txt'), String(timeLimitSeconds), 'utf8');
-    if (metadata) await fs.writeFile(path.join(tmp, 'metadata.json'), JSON.stringify(metadata), 'utf8');
-    await writeExecutor(tmp);
-
-    const subdir = path.basename(tmp);
-    const job = { jobId, subdir, createdAt: new Date().toISOString(), metadata: metadata || null };
-    // enqueue with retries
-    try {
-      await retry(() => redis.lpush('code_jobs', JSON.stringify(job)), 3, 300);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to enqueue job to Redis', e);
-      res.status(500).json({ jobId, error: 'failed to enqueue job', details: String(e) });
-      return;
-    }
-
-    // wait for worker result list: code_results:{jobId}
-    const resList = `code_results:${jobId}`;
-    const waitTimeoutSeconds = parseInt(process.env.RUNNER_WAIT_TIMEOUT || '20', 10);
-    let r: [string, string] | null = null;
-    try {
-      // wrap brpop in retry in case Redis transiently fails
-      r = await retry(() => redis.brpop(resList, waitTimeoutSeconds) as Promise<[string, string]>, 1, 0);
-    } catch (e) {
-      // timeout or redis error
-      // eslint-disable-next-line no-console
-      console.error('Error waiting for worker result', e);
-      res.status(504).json({ jobId, error: 'timeout or error waiting for runner', details: String(e) });
-      return;
-    }
-    if (!r || !r[1]) {
-      res.status(504).json({ jobId, error: 'timeout waiting for runner' });
-      return;
-    }
-    const raw = r[1];
-    let payload = null;
-    try { payload = JSON.parse(raw); } catch (e) { payload = { jobId, output: raw }; }
-    // eslint-disable-next-line no-console
-    console.log(`Job ${jobId} completed, returning result`);
-    res.json(payload);
-  } catch (err: any) {
-    res.status(500).json({ error: String(err), details: err.stderr ? err.stderr.toString() : undefined });
-  } finally {
-    // NOTE: do not remove the job directory here — worker will clean up after execution
-  }
+/**
+ * Malformed or oversized request bodies are rejected by body-parser before any
+ * route runs; answer with the same signed JSON envelope as every verdict so
+ * the API reports the real reason instead of failing to parse an HTML page.
+ */
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!err) return next();
+  const status = typeof err.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const error = err.type === 'entity.too.large' ? 'Judge payload is too large.' : 'Invalid judge request body.';
+  return sendSigned(res, status, { ok: false, error });
 });
 
 const port = process.env.PORT || 5000;

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Role, UserStatus } from '@prisma/client';
 import { AdminUsersService } from './admin-users.service';
 import { PrismaService } from '../../database/prisma.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import {
   CannotModerateSelfException,
   EmailAlreadyExistsException,
@@ -39,6 +40,7 @@ function userRow(overrides: Record<string, unknown> = {}) {
 
 describe('AdminUsersService', () => {
   let service: AdminUsersService;
+  let socketGateway: { disconnectUser: jest.Mock };
   let prisma: any;
 
   beforeEach(async () => {
@@ -59,10 +61,12 @@ describe('AdminUsersService', () => {
       ),
     };
 
+    socketGateway = { disconnectUser: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminUsersService,
         { provide: PrismaService, useValue: prisma },
+        { provide: SocketGateway, useValue: socketGateway },
       ],
     }).compile();
 
@@ -201,6 +205,28 @@ describe('AdminUsersService', () => {
   // moderation
   // -------------------------------------------------------------------------
 
+  describe('resetPassword', () => {
+    it('sets a new password, revokes sessions and closes live sockets', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+      });
+      prisma.user.update.mockResolvedValue(userRow());
+
+      const result = await service.resetPassword(actor(Role.ADMIN), 'user-1', {
+        password: 'a-new-password-123',
+      } as never);
+
+      const data = prisma.user.update.mock.calls[0][0].data;
+      expect(data.passwordHash).toEqual(expect.any(String));
+      expect(data.passwordHash).not.toBe('a-new-password-123');
+      expect(data.sessionsRevokedAt).toBeInstanceOf(Date);
+      expect(result.sessionsRevokedAt).toBe(data.sessionsRevokedAt);
+      expect(socketGateway.disconnectUser).toHaveBeenCalledWith('user-1');
+    });
+  });
+
   describe('ban', () => {
     it('bans a lower-ranked account and records who did it', async () => {
       prisma.user.findUnique.mockResolvedValue({
@@ -222,6 +248,15 @@ describe('AdminUsersService', () => {
         banReason: 'Cheating',
         bannedById: 'actor-1',
       });
+      // Open sockets are closed so the ban applies to live connections too.
+      expect(socketGateway.disconnectUser).toHaveBeenCalledWith('user-1');
+    });
+
+    it('does not disconnect anyone when the ban is refused', async () => {
+      await expect(
+        service.ban(actor(Role.MASTER, 'me'), 'me', {}),
+      ).rejects.toBeInstanceOf(CannotModerateSelfException);
+      expect(socketGateway.disconnectUser).not.toHaveBeenCalled();
     });
 
     it('refuses to ban your own account', async () => {

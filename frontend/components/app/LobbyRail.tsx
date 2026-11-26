@@ -1,91 +1,93 @@
-import Image from "next/image";
-import { Flame, TrendingUp, Trophy, Zap } from "lucide-react";
-import { Avatar, IconBadge, Panel } from "../ui/Bits";
-import { onlineFriends, recentActivity } from "../../lib/demo";
+"use client";
 
-const activityIcon = {
-  trophy: Trophy,
-  zap: Zap,
-  chart: TrendingUp,
-  flame: Flame,
-} as const;
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { Handshake, Swords, Trophy } from "lucide-react";
+import { IconBadge, Panel } from "../ui/Bits";
+import TopPlayersPanel from "./TopPlayersPanel";
+import { matches as matchesApi } from "../../lib/api";
+import type { MatchHistoryEntry } from "../../lib/battle";
+import { formatRelativeTime } from "../../lib/format";
+
+const RECENT_MATCHES = 4;
+
+function describe(match: MatchHistoryEntry) {
+  const opponent = match.opponent?.displayName || match.opponent?.username || "your opponent";
+  if (match.result === "WIN") return { icon: Trophy, tone: "green" as const, title: `You beat ${opponent}` };
+  if (match.result === "LOSS") return { icon: Swords, tone: "rose" as const, title: `You lost to ${opponent}` };
+  return { icon: Handshake, tone: "amber" as const, title: `Draw with ${opponent}` };
+}
+
+function ratingNote(match: MatchHistoryEntry) {
+  if (!match.ratingEligible) return "Casual · rating unchanged";
+  if (!match.ratingDelta) return "Ranked · rating unchanged";
+  return `Ranked · ${match.ratingDelta > 0 ? "+" : ""}${match.ratingDelta} rating`;
+}
+
+/** The player's last few finished matches (GET /matches/me/history). */
+function RecentActivity() {
+  const [matches, setMatches] = useState<MatchHistoryEntry[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    matchesApi.history(1, RECENT_MATCHES).then(
+      (res) => {
+        if (!cancelled) setMatches(res.matches);
+      },
+      () => {
+        if (!cancelled) setFailed(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Panel
+      title="Recent Activity"
+      action={
+        <Link href="/profile#match-history" className="link-quiet">
+          View All
+        </Link>
+      }
+      bodyClassName="space-y-2.5"
+    >
+      {matches === null ? (
+        <p className="text-[12px] text-dim">{failed ? "Your recent matches could not be loaded." : "Loading…"}</p>
+      ) : matches.length === 0 ? (
+        <p className="text-[12px] leading-relaxed text-dim">No finished matches yet. Your results will show up here.</p>
+      ) : (
+        matches.map((match) => {
+          const { icon: Icon, tone, title } = describe(match);
+          return (
+            <Link
+              key={match.matchId}
+              href={`/match/${match.matchId}`}
+              className="-mx-1.5 flex items-start gap-3 rounded-lg px-1.5 py-1 transition-colors hover:bg-white/[0.03]"
+            >
+              <IconBadge tone={tone} size={32} rounded="rounded-lg">
+                <Icon size={15} />
+              </IconBadge>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12.5px] font-semibold leading-snug">{title}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-dim">{ratingNote(match)}</span>
+              </span>
+              <span className="shrink-0 text-[10.5px] text-dim">{formatRelativeTime(match.finishedAt)}</span>
+            </Link>
+          );
+        })
+      )}
+    </Panel>
+  );
+}
 
 export default function LobbyRail() {
   return (
     <>
-      <Panel
-        title={
-          <span className="flex items-center gap-2">
-            Online Friends
-            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-              <span className="dot-live" />
-              {onlineFriends.length + 3}
-            </span>
-          </span>
-        }
-        action={<button className="link-quiet">View All</button>}
-        bodyClassName="space-y-3"
-      >
-        {onlineFriends.map((f) => (
-          <div key={f.name} className="flex items-center gap-3">
-            <Avatar src={f.avatar} alt={f.name} size={34} online />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-semibold">{f.name}</span>
-              <span
-                className={`block text-[11px] ${
-                  f.status === "In a Match" ? "text-amber" : "text-emerald-400"
-                }`}
-              >
-                {f.status}
-              </span>
-            </span>
-            <span className="flex items-center gap-1 text-[12px] font-bold text-amber">
-              {f.rating} <Trophy size={12} />
-            </span>
-          </div>
-        ))}
-      </Panel>
-
-      <Panel
-        title="Recent Activity"
-        action={<button className="link-quiet">View All</button>}
-        bodyClassName="space-y-3.5"
-      >
-        {recentActivity.map((a) => {
-          const Icon = activityIcon[a.icon];
-          return (
-            <div key={a.title} className="flex items-start gap-3">
-              <IconBadge tone={a.tone} size={32} rounded="rounded-lg">
-                <Icon size={15} />
-              </IconBadge>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[12.5px] font-semibold leading-snug">{a.title}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-dim">{a.meta}</span>
-              </span>
-              <span className="shrink-0 text-[10.5px] text-dim">{a.time}</span>
-            </div>
-          );
-        })}
-      </Panel>
-
-      <section className="card relative overflow-hidden border-violet/25 bg-gradient-to-br from-[#1a1440] to-[#0f1330] p-4">
-        <div className="relative z-10 max-w-[62%]">
-          <h2 className="text-[14px] font-bold">Daily Bonus</h2>
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">
-            Complete a match today and claim your bonus!
-          </p>
-          <button type="button" className="btn btn-violet mt-4 !px-4 !py-2 !text-[12px]">
-            Claim Bonus
-          </button>
-        </div>
-        <Image
-          src="/img/gift.png"
-          alt=""
-          width={320}
-          height={320}
-          className="pointer-events-none absolute -right-2 bottom-0 h-[110px] w-auto"
-        />
-      </section>
+      <RecentActivity />
+      <TopPlayersPanel />
     </>
   );
 }

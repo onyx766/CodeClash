@@ -1,11 +1,12 @@
-import { Code2, Globe, Trophy, Users } from "lucide-react";
+import { Code2, ShieldCheck, Trophy, Users } from "lucide-react";
 import { IconBadge } from "../ui/Bits";
 
+// What every battle is - facts about the game, not traffic numbers.
 const stats = [
-  { icon: Users, tone: "violet", value: "25K+", label: "Developers" },
-  { icon: Code2, tone: "green", value: "150K+", label: "Battles Played" },
-  { icon: Trophy, tone: "amber", value: "1.2M+", label: "Lines of Code" },
-  { icon: Globe, tone: "blue", value: "120+", label: "Countries" },
+  { icon: Users, tone: "violet", value: "1v1", label: "Head-to-head battles" },
+  { icon: Code2, tone: "green", value: "JavaScript", label: "Solutions run on Node.js" },
+  { icon: ShieldCheck, tone: "blue", value: "Hidden tests", label: "Every submission judged on the server" },
+  { icon: Trophy, tone: "amber", value: "Elo", label: "Ranked rating from Quick Match" },
 ] as const;
 
 export default function StatsBar() {

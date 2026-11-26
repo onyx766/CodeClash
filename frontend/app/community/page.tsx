@@ -2,32 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import {
-  Bookmark,
-  Calendar,
-  Clock,
-  Code2,
-  Eye,
-  Filter,
-  Gem,
-  Heart,
-  Lightbulb,
-  MessageSquare,
-  Megaphone,
-  MoreHorizontal,
-  Pin,
-  Plus,
-  Search,
-  Swords,
-  User,
-  Users,
-  UsersRound,
-} from "lucide-react";
-import AppLayout, { SideNav, type SideItem } from "../../components/layout/AppLayout";
-import { TournamentsCard } from "../../components/app/MainSidebar";
-import { Avatar, Panel, Tag } from "../../components/ui/Bits";
-import RankBadge from "../../components/ui/RankBadge";
-import { onlineFriends, posts, topContributors, upcomingEvents } from "../../lib/demo";
+import { Eye, Gem, Heart, Info, MessageSquare, Pin, Search } from "lucide-react";
+import AppLayout from "../../components/layout/AppLayout";
+import MainSidebar from "../../components/app/MainSidebar";
+import TopPlayersPanel from "../../components/app/TopPlayersPanel";
+import { Avatar, Tag } from "../../components/ui/Bits";
+import { posts } from "../../lib/demo";
 
 const categories = [
   "All",
@@ -36,29 +16,6 @@ const categories = [
   "Looking for Opponent",
   "Showcase",
   "Announcements",
-];
-
-const communityNav: SideItem[] = [
-  { href: "/community", label: "Community", icon: UsersRound },
-  { href: "/community?c=discussions", label: "Discussions", icon: MessageSquare },
-  { href: "/community?c=tips", label: "Tips & Solutions", icon: Lightbulb },
-  { href: "/community?c=lfo", label: "Looking for Opponent", icon: Swords },
-  { href: "/community?c=showcase", label: "Showcase", icon: Code2 },
-  { href: "/community?c=announcements", label: "Announcements", icon: Megaphone },
-];
-
-const myStuffNav: SideItem[] = [
-  { href: "/community?m=posts", label: "My Posts", icon: User },
-  { href: "/community?m=bookmarks", label: "Bookmarks", icon: Bookmark },
-  { href: "/community?m=discussions", label: "My Discussions", icon: MessageSquare },
-  { href: "/community?m=following", label: "Following", icon: Users },
-];
-
-const communityStats = [
-  { icon: Users, tone: "text-blue-300", value: "12.4K", label: "Members" },
-  { icon: Code2, tone: "text-emerald-300", value: "3.2K", label: "Posts" },
-  { icon: MessageSquare, tone: "text-violet-300", value: "8.7K", label: "Comments" },
-  { icon: Clock, tone: "text-amber", value: "24", label: "Daily Active" },
 ];
 
 export default function CommunityPage() {
@@ -76,97 +33,19 @@ export default function CommunityPage() {
   );
 
   return (
-    <AppLayout
-      sidebar={
-        <>
-          <SideNav items={communityNav} />
-          <div className="border-t border-line pt-4">
-            <SideNav items={myStuffNav} heading="Your Stuff" />
-          </div>
-          <TournamentsCard />
-        </>
-      }
-      rail={
-        <>
-          <Panel title="Top Contributors" action={<button className="link-quiet">View Leaderboard</button>} bodyClassName="space-y-3">
-            {topContributors.map((c) => (
-              <div key={c.name} className="flex items-center gap-2.5">
-                <RankBadge rank={c.rank} size={22} />
-                <Avatar src={c.avatar} alt={c.name} size={28} />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{c.name}</span>
-                <Tag tone="violet">
-                  <Gem size={10} /> {c.rating}
-                </Tag>
-                <span className="shrink-0 text-[11px] text-dim">{c.posts} posts</span>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel
-            title={
-              <span className="flex items-center gap-2">
-                Online Members
-                <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                  <span className="dot-live" /> 1248
-                </span>
-              </span>
-            }
-            action={<button className="link-quiet">View All</button>}
-          >
-            <div className="flex items-center">
-              {onlineFriends.concat(onlineFriends.slice(0, 2)).map((f, i) => (
-                <span key={`${f.name}-${i}`} className={i ? "-ml-2" : ""}>
-                  <Avatar src={f.avatar} alt={f.name} size={30} ring />
-                </span>
-              ))}
-              <span className="ml-3 rounded-full border border-line bg-panel-2 px-2.5 py-1 text-[11px] font-semibold text-muted">
-                +1243
-              </span>
-            </div>
-          </Panel>
-
-          <Panel title="Community Stats">
-            <div className="grid grid-cols-2 gap-2.5">
-              {communityStats.map((s) => (
-                <div key={s.label} className="card-soft p-3">
-                  <s.icon size={16} className={s.tone} />
-                  <p className="mt-2 text-[15px] font-extrabold">{s.value}</p>
-                  <p className="mt-0.5 text-[11px] text-dim">{s.label}</p>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Upcoming Events" action={<button className="link-quiet">View All</button>} bodyClassName="space-y-2.5">
-            {upcomingEvents.map((e) => (
-              <div key={e.title} className="card-soft flex gap-3 p-3">
-                <span
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
-                    e.tone === "violet" ? "border-violet/30 bg-violet/12 text-violet-300" : "border-blue/30 bg-blue/12 text-blue-300"
-                  }`}
-                >
-                  <Calendar size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[12.5px] font-semibold">{e.title}</span>
-                  <span className="mt-0.5 block truncate text-[11px] text-dim">{e.date}</span>
-                  <span className="mt-0.5 block text-[11px] text-blue-400">{e.going}</span>
-                </span>
-              </div>
-            ))}
-          </Panel>
-        </>
-      }
-    >
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[26px] font-extrabold tracking-[-0.02em]">Community 👋</h1>
-          <p className="mt-1.5 text-[13px] text-dim">Learn, share and grow with developers from around the world.</p>
-        </div>
-        <button type="button" className="btn btn-blue !py-2.5 !text-[12.5px]">
-          <Plus size={15} /> Create Post
-        </button>
+    <AppLayout sidebar={<MainSidebar />} rail={<TopPlayersPanel />}>
+      <header>
+        <h1 className="text-[26px] font-extrabold tracking-[-0.02em]">Community 👋</h1>
+        <p className="mt-1.5 text-[13px] text-dim">Learn, share and grow with developers from around the world.</p>
       </header>
+
+      <p className="mt-4 flex items-start gap-2.5 rounded-xl border border-blue/30 bg-blue/10 px-4 py-3 text-[12.5px] leading-relaxed text-blue-100">
+        <Info size={16} className="mt-0.5 shrink-0 text-blue-300" />
+        <span>
+          Community posts are coming soon. The posts below are examples of what you will be able to share; they are
+          not real discussions yet.
+        </span>
+      </p>
 
       <div className="no-scrollbar mt-5 flex items-center gap-2 overflow-x-auto">
         {categories.map((c) => (
@@ -183,20 +62,15 @@ export default function CommunityPage() {
         ))}
       </div>
 
-      <div className="mt-3 flex flex-col gap-2.5 sm:flex-row">
-        <div className="relative min-w-0 flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search posts…"
-            aria-label="Search posts"
-            className="field !pl-9"
-          />
-        </div>
-        <button type="button" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-panel px-4 py-2.5 text-[12.5px] font-semibold text-muted hover:text-fg">
-          <Filter size={14} /> Filters
-        </button>
+      <div className="relative mt-3">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search example posts…"
+          aria-label="Search posts"
+          className="field !pl-9"
+        />
       </div>
 
       <div className="mt-4 space-y-3">
@@ -216,17 +90,12 @@ export default function CommunityPage() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <Tag tone="slate">Example</Tag>
                 {p.pinned && (
                   <Tag tone="green">
                     <Pin size={10} /> Pinned
                   </Tag>
                 )}
-                <button type="button" aria-label="Bookmark post" className="text-dim hover:text-fg">
-                  <Bookmark size={15} />
-                </button>
-                <button type="button" aria-label="More options" className="text-dim hover:text-fg">
-                  <MoreHorizontal size={15} />
-                </button>
               </div>
             </header>
 

@@ -41,6 +41,8 @@ export interface BattlePlayer {
   total: number;
   totalSolveDurationMs: number;
   gaveUp: boolean;
+  /** Quick Match ready check: true once this player accepted. Not every API version sends it. */
+  ready?: boolean;
 }
 
 export interface BattleChallenge {
@@ -83,11 +85,31 @@ export interface BattleMatch {
   resultType: "WIN" | "DRAW" | null;
   winnerId: string | null;
   serverTime: string;
+  /** Quick Match ready check: accept before this. Not every API version sends it. */
+  readyDeadline?: string | null;
   viewer: "PARTICIPANT" | "SPECTATOR";
   me: BattlePlayer | null;
   opponent: BattlePlayer | null;
   challenges: BattleChallenge[];
   log: MatchLogEntry[];
+}
+
+/** One finished match in GET /matches/me/history, seen from the player's side. */
+export interface MatchHistoryEntry {
+  matchId: string;
+  type: "QUICK_MATCH" | "PRIVATE_ROOM";
+  ratingEligible: boolean;
+  finishedAt: string | null;
+  result: "WIN" | "LOSS" | "DRAW";
+  /** null when the match did not move rating (casual, or a ranked draw with nothing solved). */
+  ratingDelta: number | null;
+  ratingAfter: number;
+  opponent: { id: string; username: string; displayName: string | null; avatarUrl: string | null } | null;
+}
+
+export interface MatchHistoryPage {
+  matches: MatchHistoryEntry[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
 export interface ChallengeStatement {
@@ -120,6 +142,8 @@ export interface TestRunResult {
     runtimeMs: number;
     memoryKb: number | null;
     message: string | null;
+    /** JSON preview of what the solution returned; sample tests only, never hidden ones. */
+    actualOutput?: string | null;
   }[];
 }
 

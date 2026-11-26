@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Badge, Checkbox, cx } from "../ui/Primitives";
+import { Badge, cx } from "../ui/Primitives";
 import {
   IconAnalytics,
   IconBan,
@@ -37,8 +37,6 @@ const ACTIVITY_DOT = {
 export function UsersTable({
   users,
   loading,
-  selected,
-  onSelectedChange,
   sortBy,
   sortDir,
   onSort,
@@ -52,8 +50,6 @@ export function UsersTable({
 }: {
   users: AdminUser[];
   loading: boolean;
-  selected: Set<string>;
-  onSelectedChange: (next: Set<string>) => void;
   sortBy: UserSortField;
   sortDir: "asc" | "desc";
   onSort: (field: UserSortField) => void;
@@ -67,36 +63,11 @@ export function UsersTable({
   /** Opens the edit panel for this account. */
   onOpen: (user: AdminUser) => void;
 }) {
-  const allSelected = users.length > 0 && users.every((u) => selected.has(u.id));
-
-  const toggleAll = (checked: boolean) => {
-    const next = new Set(selected);
-    for (const user of users) {
-      if (checked) next.add(user.id);
-      else next.delete(user.id);
-    }
-    onSelectedChange(next);
-  };
-
-  const toggleOne = (id: string, checked: boolean) => {
-    const next = new Set(selected);
-    if (checked) next.add(id);
-    else next.delete(id);
-    onSelectedChange(next);
-  };
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse">
         <thead>
           <tr className="border-b border-line bg-[rgba(9,14,28,0.6)]">
-            <th className="w-10 px-4 py-2.5">
-              <Checkbox
-                checked={allSelected}
-                onChange={toggleAll}
-                label={<span className="sr-only">Select all users on this page</span>}
-              />
-            </th>
             <SortableHeader
               label="User"
               field="username"
@@ -135,7 +106,7 @@ export function UsersTable({
         <tbody>
           {loading && users.length === 0 ? (
             <tr>
-              <td colSpan={9} className="px-4 py-14 text-center">
+              <td colSpan={8} className="px-4 py-14 text-center">
                 <span className="inline-flex items-center gap-2 text-[13px] text-dim">
                   <IconSpinner size={15} />
                   Loading users…
@@ -144,7 +115,7 @@ export function UsersTable({
             </tr>
           ) : users.length === 0 ? (
             <tr>
-              <td colSpan={9} className="px-4 py-14 text-center text-[13px] text-dim">
+              <td colSpan={8} className="px-4 py-14 text-center text-[13px] text-dim">
                 No users match these filters.
               </td>
             </tr>
@@ -160,17 +131,7 @@ export function UsersTable({
                     busyUserId === user.id && "opacity-60",
                   )}
                 >
-                  <td className="px-4 py-2.5">
-                    <Checkbox
-                      checked={selected.has(user.id)}
-                      onChange={(checked) => toggleOne(user.id, checked)}
-                      label={
-                        <span className="sr-only">Select {user.username}</span>
-                      }
-                    />
-                  </td>
-
-                  <td className="px-3 py-2.5">
+                  <td className="py-2.5 pr-3 pl-4">
                     <div className="flex items-center gap-2.5">
                       <span
                         className={cx(
@@ -290,7 +251,7 @@ function SortableHeader({
   return (
     // aria-sort belongs on the column header, not on the button inside it.
     <th
-      className="px-3 py-2.5 text-left"
+      className="px-3 py-2.5 text-left first:pl-4"
       aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
     >
       <button

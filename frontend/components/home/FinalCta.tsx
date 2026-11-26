@@ -16,8 +16,8 @@ export default function FinalCta() {
               Your Next Challenge <span className="text-grad-bp">Awaits</span>
             </h2>
             <p className="mt-3 max-w-lg text-[13.5px] leading-relaxed text-muted">
-              Join thousands of developers and start your coding journey today. Compete, learn,
-              and become the CodeClash champion!
+              Create a free account and start your coding journey today. Compete, learn, and become
+              the CodeClash champion!
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/lobby" className="btn btn-blue !px-6 !py-3.5">

@@ -7,7 +7,9 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ExternalLink, Flag, Maximize2, Minimize2, Play, Upload } from "lucide-react";
 import { ApiError, matches as matchesApi } from "../../../lib/api";
-import { useBattle } from "../../../hooks/useBattle";
+import { AWAITING_START, useBattle } from "../../../hooks/useBattle";
+import useAuth from "../../../hooks/useAuth";
+import useProfile from "../../../hooks/useProfile";
 import { VERDICT_LABEL, type SubmitResponse, type TestRunResult } from "../../../lib/battle";
 import {
   Countdown,
@@ -23,8 +25,19 @@ import {
   TestCasesPanel,
   type Outcome,
 } from "../../../components/battle/BattlePanels";
+import { ReadyCheck } from "../../../components/battle/ReadyCheck";
+import Markdown from "../../../components/ui/Markdown";
+import { configureSelfHostedMonaco } from "../../../lib/monaco";
 
-const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+// Configured as the module loads, so before the editor first mounts.
+const MonacoEditor = dynamic(
+  () =>
+    import("@monaco-editor/react").then(({ default: Editor, loader }) => {
+      configureSelfHostedMonaco(loader);
+      return Editor;
+    }),
+  { ssr: false },
+);
 
 const draftKey = (matchId: string, matchChallengeId: string) => `cc:battle:${matchId}:draft:${matchChallengeId}`;
 const selectedKey = (matchId: string) => `cc:battle:${matchId}:selected`;
@@ -56,7 +69,10 @@ const STATUS_LABEL: Record<string, string> = {
 export default function MatchPage() {
   const params = useParams();
   const matchId = params.matchId as string;
-  const { match, statements, error, live, clockSkewMs, refresh } = useBattle(matchId);
+  const { match, statements, error, live, clockSkewMs, refresh, readyDeadline, readyCheckEnd, acceptedBy } =
+    useBattle(matchId);
+  const { refreshActiveRoom } = useAuth();
+  const { refetch: refetchProfile } = useProfile();
 
   // The challenge the player clicked (remembered per tab). Which challenge is
   // open is purely client state - players may work in any order.
@@ -81,6 +97,15 @@ export default function MatchPage() {
   }, [match?.expiresAt, clockSkewMs]);
 
   const inProgress = match?.status === "IN_PROGRESS";
+  const finished = match?.status === "FINISHED" || match?.status === "CANCELLED";
+
+  // Once the match is over its room is finished too: stop routing the player
+  // back to it, and pick up the new rating and records.
+  useEffect(() => {
+    if (!finished) return;
+    void refreshActiveRoom();
+    void refetchProfile();
+  }, [finished, refreshActiveRoom, refetchProfile]);
 
   // The server resolves an expired match within a few seconds; poll until it
   // has. Also poll while the socket is down, so the page never goes stale.
@@ -221,7 +246,21 @@ export default function MatchPage() {
     );
   }
 
-  const over = match.status === "FINISHED" || match.status === "CANCELLED";
+  // Quick Match ready check, or a match called off before it began.
+  if (AWAITING_START.includes(match.status) || (match.status === "CANCELLED" && !match.startedAt)) {
+    return (
+      <ReadyCheck
+        match={match}
+        readyDeadline={readyDeadline}
+        skewMs={clockSkewMs}
+        readyCheckEnd={readyCheckEnd}
+        acceptedBy={acceptedBy}
+        refresh={refresh}
+      />
+    );
+  }
+
+  const over = finished;
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
@@ -303,7 +342,9 @@ export default function MatchPage() {
                     View Full Description <ExternalLink size={14} />
                   </button>
                 </div>
-                <p className="line-clamp-2 shrink-0 px-5 pt-2 text-[13px] text-muted">{statement.challenge.description}</p>
+                <Markdown inline className="line-clamp-2 shrink-0 px-5 pt-2 text-[13px] text-muted">
+                  {statement.challenge.description}
+                </Markdown>
 
                 <div className="mx-4 mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-black/20">
                   <div className="flex shrink-0 items-center justify-between border-b border-line">

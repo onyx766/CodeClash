@@ -11,6 +11,10 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Run onModuleDestroy/onApplicationShutdown on SIGTERM/SIGINT so Prisma
+  // and Redis disconnect cleanly and background loops stop (docker stop).
+  app.enableShutdownHooks();
+
   const configService = app.get(ConfigService);
   // Comma-separated so a dev can browse via both localhost and a LAN/VPN IP
   // (e.g. "http://localhost:3000,http://198.18.9.78:3000") without the
@@ -49,12 +53,17 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  // Challenge import posts a whole challenge document as JSON, so it needs more
-  // headroom than the 100kb every other endpoint gets. Mounted BEFORE the
-  // global parser so it is the one that runs for this path; the ceiling is set
-  // just above MAX_IMPORT_BYTES (512kb) so the friendly IMPORT_FILE_TOO_LARGE
-  // check in ChallengeImportService is what a user actually hits.
-  app.use('/api/admin/challenges/import', json({ limit: '600kb' }));
+  // Challenge authoring (create, save, import, AI save) posts whole
+  // challenges, which may carry up to MAX_TEST_CASES test cases of up to
+  // MAX_TEST_CASE_JSON_BYTES each - far beyond the 100kb every other endpoint
+  // gets. Mounted BEFORE the global parser so it is the one that runs for
+  // these paths (staff-only routes). Imports are still capped at
+  // MAX_IMPORT_BYTES by ChallengeImportService's friendlier check.
+  app.use('/api/admin/challenges', json({ limit: '8mb' }));
+  // Run/Submit accept up to MAX_SOURCE_CODE_LENGTH (64K) characters of code,
+  // which JSON-encodes to well over 100kb when it contains quotes, newlines
+  // or non-ASCII text.
+  app.use('/api/matches', json({ limit: '512kb' }));
 
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
@@ -72,15 +81,24 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('CodeClash API')
-    .setDescription('CodeClash backend API')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  // Interactive API docs at /api/docs: on in development, opt-in
+  // (ENABLE_SWAGGER=true) in production so a public deployment does not
+  // publish a map of every endpoint by default.
+  const swaggerFlag = configService.get<string | boolean>('ENABLE_SWAGGER');
+  const swaggerEnabled =
+    swaggerFlag === undefined || swaggerFlag === ''
+      ? !isProduction
+      : swaggerFlag === true || swaggerFlag === 'true';
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('CodeClash API')
+      .setDescription('CodeClash backend API')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(port);
 

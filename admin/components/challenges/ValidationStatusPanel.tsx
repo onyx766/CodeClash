@@ -42,6 +42,7 @@ export function ValidationStatusPanel({
   running,
   stale,
   error,
+  disabled,
   onValidate,
 }: {
   status: ValidationStatus;
@@ -51,6 +52,8 @@ export function ValidationStatusPanel({
   /** The draft has unsaved edits, so any recorded result is out of date. */
   stale: boolean;
   error: string | null;
+  /** Another editor operation (save, publish) is in flight. */
+  disabled?: boolean;
   onValidate: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -86,6 +89,7 @@ export function ValidationStatusPanel({
             size="sm"
             variant="secondary"
             loading={running}
+            disabled={disabled}
             icon={running ? undefined : <IconPlay size={13} />}
             onClick={onValidate}
           >

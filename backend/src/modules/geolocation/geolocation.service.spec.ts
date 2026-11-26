@@ -34,7 +34,7 @@ describe('GeolocationService', () => {
       },
     });
 
-    const module: TestingModule = await buildService();
+    const module: TestingModule = await buildService({ GEOLOCATION_PROVIDER: 'ip-api' });
     const service = module.get(GeolocationService);
 
     const result = await service.getLocationFromIp('203.0.113.5');
@@ -77,7 +77,7 @@ describe('GeolocationService', () => {
       data: { status: 'fail', message: 'invalid query' },
     });
 
-    const module: TestingModule = await buildService();
+    const module: TestingModule = await buildService({ GEOLOCATION_PROVIDER: 'ip-api' });
     const service = module.get(GeolocationService);
 
     const result = await service.getLocationFromIp('0.0.0.0');
@@ -87,7 +87,7 @@ describe('GeolocationService', () => {
   it('returns null instead of throwing when the request times out', async () => {
     mockedAxios.get.mockRejectedValue(new Error('timeout of 2000ms exceeded'));
 
-    const module: TestingModule = await buildService();
+    const module: TestingModule = await buildService({ GEOLOCATION_PROVIDER: 'ip-api' });
     const service = module.get(GeolocationService);
 
     const result = await service.getLocationFromIp('203.0.113.5');
@@ -97,9 +97,17 @@ describe('GeolocationService', () => {
   it('returns null instead of throwing on any unexpected provider error', async () => {
     mockedAxios.get.mockRejectedValue(new Error('ECONNREFUSED'));
 
+    const module: TestingModule = await buildService({ GEOLOCATION_PROVIDER: 'ip-api' });
+    const service = module.get(GeolocationService);
+
+    await expect(service.getLocationFromIp('203.0.113.5')).resolves.toBeNull();
+  });
+
+  it('is off by default and never contacts a provider', async () => {
     const module: TestingModule = await buildService();
     const service = module.get(GeolocationService);
 
     await expect(service.getLocationFromIp('203.0.113.5')).resolves.toBeNull();
+    expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 });

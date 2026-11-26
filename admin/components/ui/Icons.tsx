@@ -301,6 +301,13 @@ export const IconTrash = (p: IconProps) => (
   </Icon>
 );
 
+export const IconArchive = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+  </Icon>
+);
+
 export const IconCopy = (p: IconProps) => (
   <Icon {...p}>
     <rect x="9" y="9" width="11" height="11" rx="2" />

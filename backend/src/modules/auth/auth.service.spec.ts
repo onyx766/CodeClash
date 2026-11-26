@@ -1,16 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { GeolocationService } from '../geolocation/geolocation.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import {
   EmailAlreadyExistsException,
   InvalidCredentialsException,
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
-import { hashPassword } from '../../common/security/password.util';
+import { hashPassword, verifyPassword } from '../../common/security/password.util';
+import { isTokenRevoked } from './session-revocation.util';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -22,10 +24,13 @@ describe('AuthService', () => {
       | 'create'
       | 'findById'
       | 'updateLocation'
+      | 'findPasswordHash'
+      | 'setPassword'
     >
   >;
   let geolocationService: jest.Mocked<Pick<GeolocationService, 'getLocationFromIp'>>;
   let configValues: Record<string, string>;
+  let socketGateway: { disconnectUser: jest.Mock };
 
   const baseUser = {
     id: 'user-1',
@@ -42,7 +47,10 @@ describe('AuthService', () => {
       create: jest.fn(),
       findById: jest.fn(),
       updateLocation: jest.fn(),
+      findPasswordHash: jest.fn(),
+      setPassword: jest.fn(),
     };
+    socketGateway = { disconnectUser: jest.fn() };
     geolocationService = {
       getLocationFromIp: jest.fn(),
     };
@@ -59,6 +67,7 @@ describe('AuthService', () => {
         AuthService,
         { provide: UsersService, useValue: usersService },
         { provide: GeolocationService, useValue: geolocationService },
+        { provide: SocketGateway, useValue: socketGateway },
         JwtService,
         {
           provide: ConfigService,
@@ -73,6 +82,24 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
+    it.each([
+      [['username'], 'USERNAME_ALREADY_EXISTS'],
+      [['email'], 'EMAIL_ALREADY_EXISTS'],
+    ])('turns a unique-constraint race on %p into a %s conflict', async (target, code) => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target },
+        }),
+      );
+
+      await expect(
+        service.register('kevin@example.com', 'kevin', 'securePassword123'),
+      ).rejects.toMatchObject({ code });
+    });
+
     it('creates a user, hashes the password, and returns tokens with a safe user', async () => {
       usersService.findByEmailOrUsername.mockResolvedValue(null);
       usersService.create.mockResolvedValue({
@@ -175,6 +202,60 @@ describe('AuthService', () => {
     });
   });
 
+  describe('changePassword', () => {
+    it('verifies the current password, stores the new hash, revokes other sessions and re-issues tokens', async () => {
+      usersService.findById.mockResolvedValue(baseUser as never);
+      usersService.findPasswordHash.mockResolvedValue(await hashPassword('oldPassword123'));
+
+      const before = Math.floor(Date.now() / 1000);
+      const { tokens, user } = await service.changePassword('user-1', 'oldPassword123', 'newPassword456');
+
+      expect(user.id).toBe('user-1');
+      const [id, newHash, revokedAt] = usersService.setPassword.mock.calls[0];
+      expect(id).toBe('user-1');
+      expect(newHash).not.toBe('newPassword456');
+      expect(await verifyPassword(newHash, 'newPassword456')).toBe(true);
+      expect(revokedAt).toBeInstanceOf(Date);
+      // The re-issued token must survive the revocation it just triggered.
+      const iat = JSON.parse(Buffer.from(tokens.accessToken.split('.')[1], 'base64url').toString()).iat;
+      expect(iat).toBeGreaterThanOrEqual(before);
+      expect(isTokenRevoked(iat, revokedAt)).toBe(false);
+      // Live sockets of every session are closed; this one reconnects.
+      expect(socketGateway.disconnectUser).toHaveBeenCalledWith('user-1');
+    });
+
+    it('refuses a wrong current password without changing anything', async () => {
+      usersService.findById.mockResolvedValue(baseUser as never);
+      usersService.findPasswordHash.mockResolvedValue(await hashPassword('oldPassword123'));
+
+      await expect(
+        service.changePassword('user-1', 'notMyPassword', 'newPassword456'),
+      ).rejects.toMatchObject({ code: 'INVALID_CURRENT_PASSWORD', status: 400 });
+      expect(usersService.setPassword).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('token lifetimes', () => {
+    const claims = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8')) as {
+        iat: number;
+        exp?: number;
+      };
+
+    it('issues access tokens that expire after JWT_ACCESS_EXPIRES_IN', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      const access = claims(tokens.accessToken);
+      expect(access.exp).toBeDefined();
+      expect(access.exp! - access.iat).toBe(15 * 60);
+      const refresh = claims(tokens.refreshToken);
+      expect(refresh.exp! - refresh.iat).toBe(7 * 24 * 60 * 60);
+    });
+  });
+
   describe('refresh', () => {
     it('rejects an invalid or garbage refresh token', async () => {
       await expect(service.refresh('not-a-real-token')).rejects.toThrow();
@@ -212,6 +293,37 @@ describe('AuthService', () => {
       );
 
       await expect(service.refresh(tokens.accessToken)).rejects.toThrow();
+    });
+
+    it('rejects a refresh token issued before the sessions were revoked', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      // e.g. an admin reset the password a minute after this token was issued
+      usersService.findById.mockResolvedValue({
+        ...baseUser,
+        sessionsRevokedAt: new Date(Date.now() + 60_000),
+      } as never);
+
+      await expect(service.refresh(tokens.refreshToken)).rejects.toThrow(
+        'Invalid or expired refresh token',
+      );
+    });
+
+    it('still refreshes tokens issued after an earlier revocation', async () => {
+      usersService.findByEmailOrUsername.mockResolvedValue(null);
+      usersService.create.mockResolvedValue({ ...baseUser, passwordHash: 'hashed' } as never);
+      const { tokens } = await service.register('kevin@example.com', 'kevin', 'securePassword123');
+
+      usersService.findById.mockResolvedValue({
+        ...baseUser,
+        sessionsRevokedAt: new Date(Date.now() - 60 * 60_000),
+      } as never);
+
+      await expect(service.refresh(tokens.refreshToken)).resolves.toMatchObject({
+        user: { id: baseUser.id },
+      });
     });
   });
 

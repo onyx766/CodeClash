@@ -1,0 +1,13 @@
+# Local development helper: publishes PostgreSQL and Redis on localhost so the
+# API, the code runner and both web apps can run natively with hot reload.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+#
+# See docs/development.md.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"

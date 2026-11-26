@@ -114,7 +114,7 @@ export default function AuthLayout({
 
             <div className="mt-7 grid gap-3 sm:grid-cols-3">
               {[
-                { icon: Users, tone: "text-emerald-400", head: "25K+", sub: "Developers" },
+                { icon: Users, tone: "text-emerald-400", head: "1v1", sub: "Head-to-head" },
                 { icon: Zap, tone: "text-violet-400", head: "Live Battles", sub: "24/7" },
                 { icon: Trophy, tone: "text-amber", head: "Rank. Code.", sub: "Win." },
               ].map((s) => (

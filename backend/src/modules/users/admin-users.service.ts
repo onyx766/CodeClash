@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { SocketGateway } from '../../socket/socket.gateway';
 import { hashPassword } from '../../common/security/password.util';
 import { roleOutranks } from '../../common/constants/role-hierarchy';
 import {
@@ -105,7 +106,10 @@ export type AdminUserView = ReturnType<typeof serialize>;
  */
 @Injectable()
 export class AdminUsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly socket: SocketGateway,
+  ) {}
 
   // -------------------------------------------------------------------------
   // reads
@@ -398,6 +402,8 @@ export class AdminUsersService {
         sessionsRevokedAt: revokedAt,
       },
     });
+    // Live sockets were authenticated before the reset; close them.
+    this.socket.disconnectUser(userId);
 
     return { success: true, sessionsRevokedAt: revokedAt };
   }
@@ -422,6 +428,9 @@ export class AdminUsersService {
       },
       select: LIST_SELECT,
     });
+    // HTTP and refresh reject banned accounts on the next request; open
+    // sockets would otherwise keep receiving events.
+    this.socket.disconnectUser(userId);
     return { user: serialize(user) };
   }
 

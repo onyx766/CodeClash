@@ -372,6 +372,59 @@ describe('Five-challenge battle engine', () => {
       expect(h.match(match.id).expiresAt).toBeInstanceOf(Date);
     });
 
+    it('shows the ready check - deadline and who accepted - only while the match waits on it', async () => {
+      const h = harness();
+      seedPlayers(h.prisma);
+      const readyDeadline = new Date(Date.now() + 10_000);
+      const [match] = h.prisma.seed('match', [
+        {
+          type: 'QUICK_MATCH',
+          status: 'PENDING_READY',
+          ratingEligible: true,
+          readyDeadline,
+        },
+      ]);
+      const matchId = match.id as string;
+      h.prisma.seed('matchParticipant', [
+        { matchId, userId: RYAN, ratingBefore: 1850, readyAt: new Date() },
+        { matchId, userId: MASTER1, ratingBefore: 1720 },
+      ]);
+      const view = async (userId: string) =>
+        (await h.matches.getMatch(matchId, PLAYER(userId))).match;
+
+      const ryan = await view(RYAN);
+      expect(ryan.readyDeadline).toEqual(readyDeadline);
+      expect(ryan.me).toMatchObject({ id: RYAN, ready: true });
+      expect(ryan.opponent).toMatchObject({ id: MASTER1, ready: false });
+      const master = await view(MASTER1);
+      expect(master.me).toMatchObject({ id: MASTER1, ready: false });
+      expect(master.opponent).toMatchObject({ id: RYAN, ready: true });
+
+      // Both accepted, start in flight: still part of the ready check.
+      for (const row of h.prisma.rows('matchParticipant')) {
+        row.readyAt = new Date();
+      }
+      h.match(matchId).status = 'READY';
+      const ready = await view(RYAN);
+      expect(ready.readyDeadline).toEqual(readyDeadline);
+      expect([ready.me?.ready, ready.opponent?.ready]).toEqual([true, true]);
+
+      for (const status of ['IN_PROGRESS', 'CANCELLED']) {
+        h.match(matchId).status = status;
+        expect((await view(RYAN)).readyDeadline).toBeNull();
+      }
+    });
+
+    it('has no ready check for a private-room match', async () => {
+      const h = harness();
+      const { matchId } = await startPrivateBattle(h);
+
+      const { match } = await h.matches.getMatch(matchId, PLAYER(RYAN));
+
+      expect(match.readyDeadline).toBeNull();
+      expect([match.me?.ready, match.opponent?.ready]).toEqual([false, false]);
+    });
+
     it('cancels (unrated) instead of starting a broken match when the pool is too small', async () => {
       const h = harness();
       const match = seedReadyQuickMatch(h);
@@ -383,6 +436,15 @@ describe('Five-challenge battle engine', () => {
       expect(h.match(match.id)).toMatchObject({ status: 'CANCELLED', finishReason: 'SYSTEM_CANCELLED' });
       expect(h.prisma.rows('matchChallenge')).toHaveLength(0);
       expect(h.rating.applyMatchRating).not.toHaveBeenCalled();
+      // Both accepted, so both are told the match could not start.
+      const payload = { matchId: match.id as string, reason: 'START_FAILED' };
+      expect(h.eventsNamed('matchmaking:cancelled')).toEqual(
+        [RYAN, MASTER1].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload,
+        })),
+      );
     });
   });
 
@@ -552,6 +614,8 @@ describe('Five-challenge battle engine', () => {
       expect(row.solveDurationMs).toBe(row.solvedAt.getTime() - h.match(matchId).startedAt.getTime());
       expect(row.bestSubmissionId).toBe(result.submission!.id);
       expect(result.submission!.status).toBe('ACCEPTED');
+      // Lifetime profile counter moves with the solve.
+      expect(h.prisma.rows('userStats').find((r) => r.userId === RYAN)!.challengesSolved).toBe(1);
     });
 
     it('updates both players’ views and emits challenge:solved and match:progress', async () => {
@@ -618,6 +682,7 @@ describe('Five-challenge battle engine', () => {
       expect(h.progress(mcs[0], RYAN)).toMatchObject({ solvedAt, bestSubmissionId: first.id });
       const view = await h.matches.getMatch(matchId, PLAYER(RYAN));
       expect(view.match.me!.solved).toBe(1);
+      expect(h.prisma.rows('userStats').find((r) => r.userId === RYAN)!.challengesSolved).toBe(1);
     });
 
     it('treats a duplicated runner verdict as a no-op', async () => {

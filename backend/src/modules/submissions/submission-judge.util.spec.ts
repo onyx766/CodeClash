@@ -134,6 +134,19 @@ describe('toClientResult', () => {
     expect(hidden.map((t) => t.status)).toEqual(['PASSED', 'WRONG_ANSWER']);
   });
 
+  it('passes the actual output through for public tests only', () => {
+    const raw = result(['WRONG_ANSWER', 'WRONG_ANSWER', 'WRONG_ANSWER']);
+    // Even if a runner sent a preview for a hidden test, it must not leave.
+    raw.tests = raw.tests!.map((t) => ({ ...t, actualOutput: '[7,7]' }));
+
+    const client = toClientResult(raw, testCases);
+
+    expect(client.results.find((r) => !r.hidden)!.actualOutput).toBe('[7,7]');
+    for (const test of client.results.filter((r) => r.hidden)) {
+      expect(test.actualOutput).toBeNull();
+    }
+  });
+
   it('keeps public test detail visible', () => {
     const client = toClientResult(result(['WRONG_ANSWER', 'PASSED', 'PASSED']), testCases);
     const publicResult = client.results.find((r) => !r.hidden)!;

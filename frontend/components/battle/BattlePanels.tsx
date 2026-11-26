@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronRight, Clock, Crown, Flag, Gem, Trophy, X } from "lucide-react";
 import { Avatar, avatarForUserId } from "../ui/Bits";
+import Markdown from "../ui/Markdown";
 import {
   VERDICT_LABEL,
   formatClock,
@@ -379,6 +380,12 @@ export function TestCasesPanel({ statement, outcome }: { statement: ChallengeSta
                 <span className="text-dim">Expected: </span>
                 {JSON.stringify(sample.expectedOutput)}
               </p>
+              {run && !run.passed && typeof run.actualOutput === "string" && (
+                <p className="mt-1 break-all text-rose-200">
+                  <span className="text-dim">Your output: </span>
+                  {run.actualOutput}
+                </p>
+              )}
               {run?.message && <p className="mt-2 break-all text-rose-300">{run.message}</p>}
             </li>
           );
@@ -444,7 +451,7 @@ export function DescriptionModal({ statement, onClose }: { statement: ChallengeS
           <X size={16} />
         </button>
       </div>
-      <p className="mt-4 whitespace-pre-wrap text-[14px] leading-relaxed text-fg/90">{c.description}</p>
+      <Markdown className="mt-4 text-[14px] leading-relaxed text-fg/90">{c.description}</Markdown>
       <div className="mt-5">
         <p className="eyebrow">Function</p>
         <code className="mt-1.5 block rounded-lg bg-black/30 px-3 py-2 font-mono text-[13px]">

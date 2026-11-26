@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Bell, ChevronDown, LogOut, Menu, User as UserIcon, X } from "lucide-react";
+import { ChevronDown, LogOut, Menu, User as UserIcon, X } from "lucide-react";
 import Logo from "../ui/Logo";
 import { Avatar, avatarForUserId } from "../ui/Bits";
 import useAuth from "../../hooks/useAuth";
 import useProfile from "../../hooks/useProfile";
+import useQuickMatch from "../../hooks/useQuickMatch";
 
 const AUTH_ONLY_ROUTES = new Set(["/lobby", "/challenges"]);
 
@@ -28,6 +29,7 @@ export default function SiteHeader({
   const router = useRouter();
   const { user, logout } = useAuth();
   const { profileUser } = useProfile();
+  const quickMatch = useQuickMatch();
   const avatarSrc = profileUser?.avatarUrl || avatarForUserId(user?.id ?? "guest");
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -59,6 +61,8 @@ export default function SiteHeader({
         : mainNav;
 
   const handleLogout = async () => {
+    // Leave the queue first, so nobody is paired with a player who is gone.
+    if (quickMatch.phase === "searching") await quickMatch.cancel();
     await logout();
     router.push("/login");
   };
@@ -90,17 +94,6 @@ export default function SiteHeader({
         <div className="ml-auto flex items-center gap-2 lg:ml-4">
           {variant === "app" ? (
             <>
-              <button
-                type="button"
-                aria-label="Notifications"
-                className="relative hidden h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-fg sm:inline-flex"
-              >
-                <Bell size={18} strokeWidth={2} />
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose text-[9.5px] font-bold text-white ring-2 ring-surface">
-                  2
-                </span>
-              </button>
-
               <div className="relative" ref={menuRef}>
                 <button
                   type="button"

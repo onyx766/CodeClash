@@ -38,9 +38,4 @@ export class UsersController {
   async getPublicProfile(@Param('username') username: string) {
     return this.profilesService.getPublicProfile(username);
   }
-
-  @Get(':id')
-  async getById(@Param('id') id: string) {
-    return this.usersService.findById(id);
-  }
 }

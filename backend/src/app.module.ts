@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -34,9 +34,19 @@ import { AppService } from './app.service';
           'http://localhost:3001,http://localhost:7662',
         ),
         TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
+        // Secure attribute on auth cookies. Defaults to NODE_ENV=production;
+        // set false when serving over plain HTTP (see cookie.util.ts).
+        COOKIE_SECURE: Joi.boolean().optional(),
+        // Global rate limit: THROTTLE_LIMIT requests per THROTTLE_TTL_MS per
+        // client address (see TRUST_PROXY_HOPS behind a reverse proxy).
+        THROTTLE_LIMIT: Joi.number().integer().min(1).default(300),
+        // Serve the OpenAPI UI at /api/docs. Defaults to on outside production.
+        ENABLE_SWAGGER: Joi.boolean().optional(),
+        THROTTLE_TTL_MS: Joi.number().integer().min(1000).default(60_000),
+        // IP geolocation is opt-in: 'none' sends nothing to a third party.
         GEOLOCATION_PROVIDER: Joi.string()
-          .valid('ip-api', 'ipapi')
-          .default('ip-api'),
+          .valid('none', 'ip-api', 'ipapi')
+          .default('none'),
         GEOLOCATION_API_KEY: Joi.string().allow('').optional(),
         GEOLOCATION_TIMEOUT_MS: Joi.number().integer().min(0).default(2000),
         GEOLOCATION_DEV_IP: Joi.string().allow('').optional(),
@@ -95,6 +105,10 @@ import { AppService } from './app.service';
         // /run/secrets/runner_secret). When set, every judge verdict must
         // carry a valid signature - see JudgeRunnerClient.
         RUNNER_SECRET: Joi.string().allow('').optional(),
+        // Validate published-but-never-checked challenges (e.g. seed data)
+        // in the sandbox once a runner worker is up, so a fresh install can
+        // start matches without an admin validating each one by hand.
+        AUTO_VALIDATE_CHALLENGES: Joi.boolean().default(true),
 
         // Optional AI challenge-generation provider. When unset, the admin
         // console's AI mode reports itself as unavailable rather than
@@ -105,7 +119,19 @@ import { AppService } from './app.service';
       }),
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Default per-client budget for every route (stricter limits are set per
+    // route on sign-in, sign-up and password changes). Clients poll some
+    // endpoints while a player searches or waits, and players behind one NAT
+    // share an address, so keep this comfortably above a single tab's needs.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: config.get<number>('THROTTLE_TTL_MS') ?? 60_000,
+          limit: config.get<number>('THROTTLE_LIMIT') ?? 300,
+        },
+      ],
+    }),
     // Core modules
     // Database and Redis modules provide PrismaService and RedisService
     require('./database/database.module').DatabaseModule,
@@ -125,6 +151,7 @@ import { AppService } from './app.service';
     require('./modules/rating/rating.module').RatingModule,
     require('./modules/runner/runner.module').RunnerModule,
     require('./modules/jobs/jobs.module').JobsModule,
+    require('./modules/health/health.module').HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

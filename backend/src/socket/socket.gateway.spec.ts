@@ -9,6 +9,7 @@ const USERS: Record<string, { role: string; status: string }> = {
   bannedAdmin: { role: 'ADMIN', status: 'BANNED' },
 };
 const PARTICIPANTS = new Set(['ryan', 'master1']);
+const ROOM_PLAYERS = new Set(['ryan', 'master1']);
 
 function build() {
   const prisma = {
@@ -21,10 +22,23 @@ function build() {
     },
     user: { findUnique: jest.fn(async ({ where }: any) => USERS[where.id] ?? null) },
     match: { update: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn() },
+    roomPlayer: {
+      findFirst: jest.fn(async ({ where }: any) =>
+        where.roomId === 'room-1' && ROOM_PLAYERS.has(where.userId) ? { id: `rp-${where.userId}` } : null,
+      ),
+    },
+    room: { findUnique: jest.fn(async (_args: unknown) => ({ id: 'room-1', players: [] })) },
   };
-  const redis = { del: jest.fn(), set: jest.fn() };
+  const redis = {
+    del: jest.fn(),
+    set: jest.fn(),
+    hset: jest.fn(),
+    expire: jest.fn(),
+    hgetall: jest.fn(async () => ({})),
+  };
+  const jwt = { verify: jest.fn() };
   const gateway = new SocketGateway(
-    {} as any,
+    jwt as any,
     { get: jest.fn() } as any,
     { getClient: () => redis } as any,
     prisma as any,
@@ -32,7 +46,7 @@ function build() {
   const emit = jest.fn();
   const to = jest.fn(() => ({ emit }));
   gateway.server = { to, emit } as any;
-  return { gateway, prisma, redis, emit, to };
+  return { gateway, prisma, redis, emit, to, jwt };
 }
 
 function socketFor(userId?: string, role = 'USER') {
@@ -114,5 +128,52 @@ describe('SocketGateway match channel', () => {
     expect(prisma.match.update).not.toHaveBeenCalled();
     expect(prisma.match.updateMany).not.toHaveBeenCalled();
     expect(prisma.match.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('SocketGateway room channel', () => {
+  it('lets a room player subscribe and broadcasts a snapshot without private user fields', async () => {
+    const { gateway, prisma, to } = build();
+    const client = socketFor('ryan');
+
+    await expect(gateway.onRoomJoin(client, { roomId: 'room-1' })).resolves.toEqual({ ok: true });
+
+    expect(client.join).toHaveBeenCalledWith('room:room-1');
+    expect(to).toHaveBeenCalledWith('room:room-1');
+    const include = (prisma.room.findUnique.mock.calls[0][0] as { include: any }).include;
+    expect(include.players.include.user).toEqual({ select: { id: true, username: true } });
+  });
+
+  it('refuses a user who is not in the room', async () => {
+    const { gateway, emit } = build();
+    const client = socketFor('stranger');
+
+    await expect(gateway.onRoomJoin(client, { roomId: 'room-1' })).resolves.toEqual({
+      ok: false,
+      error: 'ROOM_ACCESS_DENIED',
+    });
+    expect(client.join).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('only lets room players set a ready flag, and expires the flags', async () => {
+    const { gateway, redis } = build();
+
+    await expect(gateway.onRoomReady(socketFor('stranger'), { roomId: 'room-1', ready: true })).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(redis.hset).not.toHaveBeenCalled();
+
+    await expect(gateway.onRoomReady(socketFor('ryan'), { roomId: 'room-1', ready: true })).resolves.toEqual({ ok: true });
+    expect(redis.hset).toHaveBeenCalledWith('room:room-1:ready', 'ryan', '1');
+    expect(redis.expire).toHaveBeenCalledWith('room:room-1:ready', expect.any(Number));
+  });
+
+  it('rejects malformed room ids', async () => {
+    const { gateway } = build();
+    await expect(gateway.onRoomJoin(socketFor('ryan'), { roomId: 42 } as any)).resolves.toEqual({
+      ok: false,
+      error: 'INVALID_REQUEST',
+    });
   });
 });

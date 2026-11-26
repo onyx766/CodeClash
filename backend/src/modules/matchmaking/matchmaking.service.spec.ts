@@ -12,6 +12,7 @@ import { MatchmakingStatus } from './matchmaking.types';
 import {
   ActiveMatchExistsException,
   ActiveRoomExistsException,
+  InvalidMatchStateException,
   MatchAlreadyFoundException,
   MatchmakingUnavailableException,
   UserStatsNotFoundException,
@@ -74,7 +75,18 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
     startQuickMatch: jest.fn().mockResolvedValue({ id: 'match-1', status: 'IN_PROGRESS' }),
   };
   const emit = jest.fn();
-  const socket = { server: { to: () => ({ emit }) } };
+  // Every emit together with the channel it went to, for per-player checks.
+  const sent: Array<{ to: string; event: string; payload: unknown }> = [];
+  const socket = {
+    server: {
+      to: (channel: string) => ({
+        emit: (event: string, payload: unknown) => {
+          sent.push({ to: channel, event, payload });
+          emit(event, payload);
+        },
+      }),
+    },
+  };
   const configValues: Record<string, number> = overrides?.config ?? {};
   const config = { get: jest.fn((key: string) => configValues[key]) };
 
@@ -91,7 +103,7 @@ async function buildService(overrides?: { config?: Record<string, number> }) {
   }).compile();
 
   const service = module.get(MatchmakingService);
-  return { service, prisma, redis, rooms, matches, emit };
+  return { service, prisma, redis, rooms, matches, emit, sent };
 }
 
 describe('MatchmakingService', () => {
@@ -402,6 +414,26 @@ describe('MatchmakingService', () => {
       await expect(service.handleReady('match-1', 'stranger')).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    it.each(['IN_PROGRESS', 'CANCELLED', 'FINISHED'])(
+      'refuses a %s match with 409 INVALID_MATCH_STATE and a message about the ready check',
+      async (status) => {
+        const { service, prisma } = await buildService();
+        prisma.match.findUnique.mockResolvedValue(match({ status }));
+
+        const error = await service
+          .handleReady('match-1', 'a')
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(InvalidMatchStateException);
+        expect((error as InvalidMatchStateException).getStatus()).toBe(409);
+        expect((error as InvalidMatchStateException).getResponse()).toEqual({
+          code: 'INVALID_MATCH_STATE',
+          message: 'This match is no longer waiting for players to accept.',
+        });
+        expect(prisma.matchParticipant.update).not.toHaveBeenCalled();
+      },
+    );
+
     it('does not start the match when only one participant is ready', async () => {
       const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
@@ -471,6 +503,38 @@ describe('MatchmakingService', () => {
       expect(matches.startQuickMatch).toHaveBeenCalledTimes(1);
     });
 
+    it('tells both players when one of them accepts', async () => {
+      const { service, prisma, emit } = await buildService();
+      prisma.match.findUnique.mockResolvedValue(match());
+      prisma.matchParticipant.findMany.mockResolvedValue([
+        { matchId: 'match-1', userId: 'a', readyAt: new Date() },
+        { matchId: 'match-1', userId: 'b', readyAt: null },
+      ]);
+
+      await service.handleReady('match-1', 'a');
+
+      const readyEvents = emit.mock.calls.filter(([event]) => event === 'match:ready');
+      expect(readyEvents).toHaveLength(2);
+      expect(readyEvents[0][1]).toEqual({ matchId: 'match-1', userId: 'a' });
+    });
+
+    it('reports the status the start produced, not an assumed IN_PROGRESS', async () => {
+      const { service, prisma, matches } = await buildService();
+      prisma.match.findUnique.mockResolvedValue(match());
+      prisma.matchParticipant.findMany.mockResolvedValue([
+        { matchId: 'match-1', userId: 'a', readyAt: new Date() },
+        { matchId: 'match-1', userId: 'b', readyAt: new Date() },
+      ]);
+      prisma.match.updateMany.mockResolvedValue({ count: 1 });
+      // e.g. the match was cancelled between the READY claim and the start
+      matches.startQuickMatch.mockResolvedValue({ id: 'match-1', status: 'CANCELLED' });
+
+      await expect(service.handleReady('match-1', 'b')).resolves.toEqual({
+        matchId: 'match-1',
+        status: 'CANCELLED',
+      });
+    });
+
     it('propagates a failed battle start (e.g. too few challenges)', async () => {
       const { service, prisma, matches } = await buildService();
       prisma.match.findUnique.mockResolvedValue(match());
@@ -486,8 +550,26 @@ describe('MatchmakingService', () => {
   });
 
   describe('processReadyTimeouts', () => {
+    type Sent = Array<{ to: string; event: string; payload: unknown }>;
+    /** What each user channel received, minus the requeue's own events. */
+    const outcomes = (sent: Sent) =>
+      sent.filter((s) => s.event !== 'matchmaking:searching');
+    type Claim = {
+      where: { id: string; status: string };
+      data: { status: string };
+    };
+    /** The conditional update the sweep used to claim a match. */
+    const claim = (prisma: MockPrisma, call = 0) =>
+      (prisma.match.updateMany.mock.calls as Array<[Claim]>)[call][0];
+    const participant = (matchId: string, userId: string, ready: boolean) => ({
+      matchId,
+      userId,
+      readyAt: ready ? new Date() : null,
+      ratingBefore: 1500,
+    });
+
     it('cancels an expired match, requeues only the ready player, with no rating impact', async () => {
-      const { service, prisma, redis, emit } = await buildService();
+      const { service, prisma, redis, sent } = await buildService();
       prisma.match.findMany.mockResolvedValue([
         {
           id: 'match-1',
@@ -507,13 +589,26 @@ describe('MatchmakingService', () => {
         where: { id: 'match-1', status: 'PENDING_READY' },
         data: expect.objectContaining({ status: 'CANCELLED' }),
       });
-      expect(emit).toHaveBeenCalledWith('matchmaking:opponent-unavailable', { matchId: 'match-1' });
+      // The player who accepted hears the opponent did not; the one who did
+      // not accept hears that they missed the ready check.
+      expect(outcomes(sent)).toEqual([
+        {
+          to: 'user:no-show',
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-1', reason: 'READY_TIMEOUT' },
+        },
+        {
+          to: 'user:ready-user',
+          event: 'matchmaking:opponent-unavailable',
+          payload: { matchId: 'match-1' },
+        },
+      ]);
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'ready-user')).toBe('1500');
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'no-show')).toBeNull();
     });
 
-    it('cancels with no requeue when neither participant readied', async () => {
-      const { service, prisma, redis, emit } = await buildService();
+    it('tells both players they missed the ready check when neither accepted, and requeues nobody', async () => {
+      const { service, prisma, redis, sent } = await buildService();
       prisma.match.findMany.mockResolvedValue([
         {
           id: 'match-2',
@@ -529,9 +624,84 @@ describe('MatchmakingService', () => {
 
       await service.processReadyTimeouts();
 
-      expect(emit).toHaveBeenCalledWith('matchmaking:cancelled', { matchId: 'match-2' });
+      expect(sent).toEqual(
+        ['x', 'y'].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-2', reason: 'READY_TIMEOUT' },
+        })),
+      );
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'x')).toBeNull();
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'y')).toBeNull();
+    });
+
+    it('tells both players the match could not start when a READY match is stuck past the grace period', async () => {
+      const { service, prisma, redis, sent } = await buildService();
+      prisma.match.findMany.mockResolvedValue([
+        {
+          id: 'match-4',
+          status: 'READY',
+          readyDeadline: new Date(Date.now() - 31_000),
+          participants: [
+            participant('match-4', 'x', true),
+            participant('match-4', 'y', true),
+          ],
+        },
+      ]);
+      prisma.match.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.processReadyTimeouts();
+
+      expect(claim(prisma)).toMatchObject({
+        where: { id: 'match-4', status: 'READY' },
+        data: { status: 'CANCELLED' },
+      });
+      expect(sent).toEqual(
+        ['x', 'y'].map((userId) => ({
+          to: `user:${userId}`,
+          event: 'matchmaking:cancelled',
+          payload: { matchId: 'match-4', reason: 'START_FAILED' },
+        })),
+      );
+      expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'x')).toBeNull();
+      expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'y')).toBeNull();
+    });
+
+    it('gives a match both players accepted the start grace period even before it reached READY', async () => {
+      const { service, prisma, sent } = await buildService();
+      const bothAccepted = (readyDeadline: Date) => ({
+        id: 'match-5',
+        status: 'PENDING_READY',
+        readyDeadline,
+        participants: [
+          participant('match-5', 'x', true),
+          participant('match-5', 'y', true),
+        ],
+      });
+      const secondsAgo = (seconds: number) =>
+        new Date(Date.now() - seconds * 1000);
+
+      // Just past the deadline: the second accept is moving it to READY.
+      prisma.match.findMany.mockResolvedValueOnce([
+        bothAccepted(secondsAgo(1)),
+      ]);
+      await service.processReadyTimeouts();
+      expect(prisma.match.updateMany).not.toHaveBeenCalled();
+      expect(sent).toEqual([]);
+
+      // Still not started once the grace period is over.
+      prisma.match.findMany.mockResolvedValueOnce([
+        bothAccepted(secondsAgo(31)),
+      ]);
+      await service.processReadyTimeouts();
+      expect(claim(prisma)).toMatchObject({
+        where: { id: 'match-5', status: 'PENDING_READY' },
+        data: { status: 'CANCELLED' },
+      });
+      expect(sent.map((s) => [s.to, s.payload])).toEqual([
+        ['user:x', { matchId: 'match-5', reason: 'START_FAILED' }],
+        ['user:y', { matchId: 'match-5', reason: 'START_FAILED' }],
+      ]);
     });
 
     it('skips a match whose timeout was already claimed by another instance/tick', async () => {
@@ -555,9 +725,26 @@ describe('MatchmakingService', () => {
     });
   });
 
+  describe('processReadyTimeouts query', () => {
+    it('cancels unanswered matches at the deadline but leaves an in-flight start a grace period', async () => {
+      const { service, prisma } = await buildService();
+      prisma.match.findMany.mockResolvedValue([]);
+      const before = Date.now();
+
+      await service.processReadyTimeouts();
+
+      const where = prisma.match.findMany.mock.calls[0][0].where;
+      const [pending, ready] = where.OR;
+      expect(pending.status).toBe('PENDING_READY');
+      expect(pending.readyDeadline.lt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(ready.status).toBe('READY');
+      expect(ready.readyDeadline.lt.getTime()).toBeLessThanOrEqual(Date.now() - 30_000);
+    });
+  });
+
   describe('sweepStaleQueueEntries', () => {
-    it('removes queue entries with no recent heartbeat', async () => {
-      const { service, redis } = await buildService();
+    it('removes queue entries with no recent heartbeat and tells the user', async () => {
+      const { service, redis, emit } = await buildService();
       await redis.zadd(MATCHMAKING_RATING_ZSET, 1500, 'stale-user');
       await redis.zadd(MATCHMAKING_JOINED_ZSET, Date.now(), 'stale-user');
       // No lastseen key set for stale-user - simulates a dropped connection
@@ -566,6 +753,7 @@ describe('MatchmakingService', () => {
       await service.sweepStaleQueueEntries();
 
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'stale-user')).toBeNull();
+      expect(emit).toHaveBeenCalledWith('matchmaking:cancelled', { reason: 'STALE' });
     });
 
     it('keeps queue entries with a fresh heartbeat', async () => {
@@ -577,6 +765,17 @@ describe('MatchmakingService', () => {
       await service.sweepStaleQueueEntries();
 
       expect(await redis.zscore(MATCHMAKING_RATING_ZSET, 'fresh-user')).toBe('1500');
+    });
+
+    it('does not notify users whose entry is fresh', async () => {
+      const { service, redis, emit } = await buildService();
+      await redis.zadd(MATCHMAKING_RATING_ZSET, 1500, 'fresh-user');
+      await redis.zadd(MATCHMAKING_JOINED_ZSET, Date.now(), 'fresh-user');
+      await redis.set('matchmaking:quick:lastseen:fresh-user', '1', 'PX', 10_000);
+
+      await service.sweepStaleQueueEntries();
+
+      expect(emit).not.toHaveBeenCalled();
     });
   });
 });

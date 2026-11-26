@@ -292,7 +292,7 @@ export function TestCasesEditor({
                                 inputText: buildInputSkeleton(draft.parameters),
                               })
                             }
-                            className="text-[11px] text-dim transition-colors hover:text-blue-soft"
+                            className="text-[11px] text-dim transition-colors hover:text-blue-soft disabled:pointer-events-none disabled:opacity-40"
                           >
                             Reset to contract
                           </button>
@@ -304,6 +304,7 @@ export function TestCasesEditor({
                           }
                           label="Input"
                           minRows={4}
+                          readOnly={disabled}
                         />
                       </div>
 
@@ -316,6 +317,7 @@ export function TestCasesEditor({
                           }
                           label="Expected"
                           minRows={4}
+                          readOnly={disabled}
                         />
                       </div>
                     </div>

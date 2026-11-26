@@ -45,6 +45,7 @@ export function ExecutionLimitsPanel({
             max={LIMITS.timeLimitMs.max}
             step={LIMITS.timeLimitMs.step}
             invalid={out(draft.timeLimitMs, "timeLimitMs")}
+            disabled={disabled}
             onChange={(timeLimitMs) => !disabled && patch({ timeLimitMs })}
           />
         </Field>
@@ -63,6 +64,7 @@ export function ExecutionLimitsPanel({
             max={LIMITS.memoryLimitMb.max}
             step={LIMITS.memoryLimitMb.step}
             invalid={out(draft.memoryLimitMb, "memoryLimitMb")}
+            disabled={disabled}
             onChange={(memoryLimitMb) => !disabled && patch({ memoryLimitMb })}
           />
         </Field>
@@ -81,6 +83,7 @@ export function ExecutionLimitsPanel({
             max={LIMITS.outputLimitKb.max}
             step={LIMITS.outputLimitKb.step}
             invalid={out(draft.outputLimitKb, "outputLimitKb")}
+            disabled={disabled}
             onChange={(outputLimitKb) => !disabled && patch({ outputLimitKb })}
           />
         </Field>

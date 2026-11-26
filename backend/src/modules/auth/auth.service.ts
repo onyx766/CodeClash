@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { StringValue } from 'ms';
 import {
   hashPassword,
@@ -12,10 +12,13 @@ import {
   AccountBannedException,
   EmailAlreadyExistsException,
   InvalidCredentialsException,
+  InvalidCurrentPasswordException,
   UnauthenticatedException,
   UsernameAlreadyExistsException,
 } from '../../common/exceptions/app.exception';
 import { UsersService } from '../users/users.service';
+import { SocketGateway } from '../../socket/socket.gateway';
+import { isTokenRevoked } from './session-revocation.util';
 import { GeolocationService } from '../geolocation/geolocation.service';
 import {
   AccessTokenPayload,
@@ -31,6 +34,7 @@ interface UserPublicFields {
   role: Role;
   createdAt: Date;
   status: UserStatus;
+  sessionsRevokedAt?: Date | null;
 }
 
 @Injectable()
@@ -42,6 +46,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly geolocationService: GeolocationService,
+    private readonly socket: SocketGateway,
   ) {}
 
   async register(
@@ -65,11 +70,24 @@ export class AuthService {
 
     const passwordHash = await hashPassword(password);
 
-    const user = await this.usersService.create({
-      email: normalizedEmail,
-      username,
-      passwordHash,
-    });
+    let user: Awaited<ReturnType<UsersService['create']>>;
+    try {
+      user = await this.usersService.create({
+        email: normalizedEmail,
+        username,
+        passwordHash,
+      });
+    } catch (error) {
+      // Two simultaneous sign-ups can both pass the check above; the unique
+      // index then rejects the second, which is a conflict, not a 500.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = String((error.meta as { target?: unknown } | undefined)?.target ?? '');
+        throw target.includes('email')
+          ? new EmailAlreadyExistsException()
+          : new UsernameAlreadyExistsException();
+      }
+      throw error;
+    }
 
     const tokens = this.generateTokens(user);
 
@@ -141,8 +159,52 @@ export class AuthService {
       throw new AccountBannedException();
     }
 
+    // Revoking a user's sessions (e.g. an admin password reset) must end
+    // them for good: a refresh token issued before that point cannot be
+    // exchanged for new tokens, just as the JWT strategy rejects such an
+    // access token.
+    if (isTokenRevoked(payload.iat, record.sessionsRevokedAt)) {
+      throw new UnauthenticatedException('Invalid or expired refresh token');
+    }
+
     const tokens = this.generateTokens(record);
     await this.touchLastActive(record.id);
+    return { user: this.toSafeUser(record), tokens };
+  }
+
+  /**
+   * Self-service password change. Verifies the current password, stores the
+   * new one and revokes every other session (any token issued before now),
+   * then issues fresh tokens so the caller's own session continues.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ user: SafeUser; tokens: TokenPair }> {
+    const [record, passwordHash] = await Promise.all([
+      this.findUserById(userId),
+      this.usersService.findPasswordHash(userId),
+    ]);
+    if (!record || !passwordHash) {
+      throw new UnauthenticatedException();
+    }
+    if (!(await verifyPassword(passwordHash, currentPassword))) {
+      throw new InvalidCurrentPasswordException();
+    }
+
+    await this.usersService.setPassword(
+      userId,
+      await hashPassword(newPassword),
+      new Date(),
+    );
+    // Close live sockets of every session; this one reconnects with the
+    // re-issued cookie, the revoked ones are refused at the handshake.
+    this.socket.disconnectUser(userId);
+
+    // Issued after the revocation instant (same second at the earliest),
+    // so isTokenRevoked() lets these through while older tokens are refused.
+    const tokens = this.generateTokens(record);
     return { user: this.toSafeUser(record), tokens };
   }
 
@@ -178,9 +240,13 @@ export class AuthService {
       type: 'refresh',
     };
 
-    // No expiresIn - the access token never expires (no `exp` claim).
+    // Short-lived: clients renew it through POST /auth/refresh. A stolen
+    // access token is only useful until it expires, and logout plus
+    // session revocation become effective within that window.
     const accessToken = this.jwtService.sign(accessPayload, {
       secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: (this.config.get<string>('JWT_ACCESS_EXPIRES_IN') ||
+        '15m') as StringValue,
     });
     const refreshToken = this.jwtService.sign(refreshPayload, {
       secret: this.config.get<string>('JWT_REFRESH_SECRET'),

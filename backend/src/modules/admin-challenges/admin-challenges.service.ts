@@ -87,6 +87,33 @@ export class AdminChallengesService {
     return { challenges: challenges.map(toAdminChallengeSummary) };
   }
 
+  /**
+   * GET /admin/challenges/stats - the console's overview counts, made in the
+   * database so they stay right past list()'s 200-row page. drafts,
+   * published and archived count challenges by status; validationPassed
+   * counts every challenge whose last validation passed, whatever its status.
+   */
+  async stats() {
+    const [byStatus, validationPassed] = await Promise.all([
+      this.prisma.challenge.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.challenge.count({
+        where: { validationStatus: ChallengeValidationStatus.PASSED },
+      }),
+    ]);
+    const withStatus = (status: ChallengeStatus) =>
+      byStatus.find((row) => row.status === status)?._count._all ?? 0;
+    return {
+      success: true,
+      stats: {
+        total: byStatus.reduce((sum, row) => sum + row._count._all, 0),
+        drafts: withStatus(ChallengeStatus.DRAFT),
+        published: withStatus(ChallengeStatus.PUBLISHED),
+        archived: withStatus(ChallengeStatus.ARCHIVED),
+        validationPassed,
+      },
+    };
+  }
+
   async getById(id: string) {
     return { challenge: toAdminChallenge(await this.loadOrThrow(id)) };
   }
@@ -164,14 +191,6 @@ export class AdminChallengesService {
 
   async update(id: string, dto: UpsertChallengeDto) {
     const existing = await this.loadOrThrow(id);
-    const touchesJudging = this.touchesJudging(dto);
-
-    // A published challenge is being played, and MatchChallenges point straight at it.
-    // Presentational edits stay allowed; anything that could change a verdict
-    // does not. See docs in the module README.
-    if (existing.status === ChallengeStatus.PUBLISHED && touchesJudging) {
-      throw new ChallengeLockedException();
-    }
 
     const contract = dto.functionContract;
     if (contract) this.assertContract(contract);
@@ -180,34 +199,50 @@ export class AdminChallengesService {
       (existing.parameters as unknown as FunctionParameter[]) ??
       []) as FunctionParameter[];
 
+    const testCases =
+      dto.testCases !== undefined
+        ? this.normalizeTestCases(dto.testCases, parameters)
+        : null;
+
+    // Judged by value, not by presence: the console always sends the whole
+    // draft, so re-sending unchanged judging fields must not count as an edit.
+    const touchesJudging = this.changesJudging(existing, dto, parameters, testCases);
+
+    // A published challenge is being played, and MatchChallenges point straight at it.
+    // Presentational edits stay allowed; anything that could change a verdict
+    // does not. See docs in the module README.
+    if (existing.status === ChallengeStatus.PUBLISHED && touchesJudging) {
+      throw new ChallengeLockedException();
+    }
+
     const data: Prisma.ChallengeUpdateInput = {};
 
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.difficulty !== undefined) data.difficulty = dto.difficulty;
-    if (dto.problemType !== undefined) data.problemType = dto.problemType;
+    if (touchesJudging && dto.problemType !== undefined) data.problemType = dto.problemType;
     if (dto.slug !== undefined) {
       data.slug = await this.resolveSlug(dto.slug, id, true);
     }
-    if (contract) {
+    if (contract && touchesJudging) {
       data.functionName = contract.functionName;
       data.parameters = parameters as unknown as Prisma.InputJsonValue;
       data.returnType = contract.returnType;
       data.starterCode = contract.starterCode;
     }
-    if (dto.judgeMethod !== undefined) data.judgeMethod = dto.judgeMethod;
-    if (dto.referenceSolutionCode !== undefined) {
+    if (touchesJudging && dto.judgeMethod !== undefined) data.judgeMethod = dto.judgeMethod;
+    if (touchesJudging && dto.referenceSolutionCode !== undefined) {
       data.referenceSolutionCode = dto.referenceSolutionCode || null;
     }
-    if (dto.customCheckerCode !== undefined) {
+    if (touchesJudging && dto.customCheckerCode !== undefined) {
       data.customCheckerCode = dto.customCheckerCode || null;
     }
-    if (dto.testGeneratorCode !== undefined) {
+    if (touchesJudging && dto.testGeneratorCode !== undefined) {
       data.testGeneratorCode = dto.testGeneratorCode || null;
     }
-    if (dto.timeLimitMs !== undefined) data.timeLimitMs = dto.timeLimitMs;
-    if (dto.memoryLimitMb !== undefined) data.memoryLimitMb = dto.memoryLimitMb;
-    if (dto.outputLimitKb !== undefined) data.outputLimitKb = dto.outputLimitKb;
+    if (touchesJudging && dto.timeLimitMs !== undefined) data.timeLimitMs = dto.timeLimitMs;
+    if (touchesJudging && dto.memoryLimitMb !== undefined) data.memoryLimitMb = dto.memoryLimitMb;
+    if (touchesJudging && dto.outputLimitKb !== undefined) data.outputLimitKb = dto.outputLimitKb;
     if (dto.timeLimitSeconds !== undefined) {
       data.timeLimitSeconds = dto.timeLimitSeconds;
     }
@@ -225,14 +260,10 @@ export class AdminChallengesService {
       data.validationFingerprint = null;
     }
 
-    const testCases =
-      dto.testCases !== undefined
-        ? this.normalizeTestCases(dto.testCases, parameters)
-        : null;
-
     const challenge = await this.prisma.$transaction(async (tx) => {
       await tx.challenge.update({ where: { id }, data });
-      if (testCases) {
+      // Unchanged test cases are left alone rather than recreated.
+      if (testCases && touchesJudging) {
         await tx.challengeTestCase.deleteMany({ where: { challengeId: id } });
         for (const testCase of testCases) {
           await tx.challengeTestCase.create({
@@ -400,6 +431,53 @@ export class AdminChallengesService {
   // -------------------------------------------------------------------------
   // internals
   // -------------------------------------------------------------------------
+
+  /**
+   * Whether applying `dto` would change anything a verdict depends on.
+   * Compares the judging fingerprint of the merged result with that of the
+   * stored challenge, so it agrees exactly with what publish() and
+   * validation treat as "the same challenge".
+   */
+  private changesJudging(
+    existing: ChallengeWithRelations,
+    dto: UpsertChallengeDto,
+    parameters: FunctionParameter[],
+    testCases: NormalizedTestCase[] | null,
+  ): boolean {
+    if (!this.touchesJudging(dto)) return false;
+    const contract = dto.functionContract;
+    const orNull = (value: string | null | undefined, stored: string | null) =>
+      value !== undefined ? value || null : stored;
+
+    const merged = computeChallengeFingerprint({
+      problemType: dto.problemType ?? existing.problemType,
+      functionName: contract?.functionName ?? existing.functionName,
+      parameters: contract ? parameters : existing.parameters,
+      returnType: contract?.returnType ?? existing.returnType,
+      starterCode: contract?.starterCode ?? existing.starterCode,
+      judgeMethod: dto.judgeMethod ?? existing.judgeMethod,
+      referenceSolutionCode: orNull(dto.referenceSolutionCode, existing.referenceSolutionCode),
+      customCheckerCode: orNull(dto.customCheckerCode, existing.customCheckerCode),
+      testGeneratorCode: orNull(dto.testGeneratorCode, existing.testGeneratorCode),
+      timeLimitMs: dto.timeLimitMs ?? existing.timeLimitMs,
+      memoryLimitMb: dto.memoryLimitMb ?? existing.memoryLimitMb,
+      outputLimitKb: dto.outputLimitKb ?? existing.outputLimitKb,
+      testCases: testCases
+        ? testCases.map((testCase) => ({
+            order: testCase.order,
+            isHidden: testCase.isHidden,
+            input: testCase.input,
+            expectedOutput: testCase.expectedOutput === Prisma.DbNull ? null : testCase.expectedOutput,
+          }))
+        : existing.testCases.map((testCase) => ({
+            order: testCase.order,
+            isHidden: testCase.isHidden,
+            input: testCase.input,
+            expectedOutput: testCase.expectedOutput,
+          })),
+    });
+    return merged !== this.fingerprint(existing);
+  }
 
   /** Fields whose modification can change what a submission scores. */
   private touchesJudging(dto: UpsertChallengeDto): boolean {

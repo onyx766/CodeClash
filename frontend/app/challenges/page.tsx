@@ -1,110 +1,85 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import {
-  Bookmark,
-  ChevronLeft,
-  ChevronRight,
-  Code2,
-  Coins,
-  Crown,
-  Flame,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  SlidersHorizontal,
-  Trophy,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Code2, Crown, FlaskConical, RotateCcw, Search, ShieldAlert, ShieldCheck, Timer, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import AppLayout from "../../components/layout/AppLayout";
 import ChallengesSidebar from "../../components/app/ChallengesSidebar";
 import ChallengesRail from "../../components/app/ChallengesRail";
 import { IconBadge, Tag } from "../../components/ui/Bits";
+import Markdown from "../../components/ui/Markdown";
+import { challenges as challengesApi, type CatalogueChallenge } from "../../lib/api";
+import type { Difficulty } from "../../lib/battle";
+import { DIFFICULTIES, DIFFICULTY_META, formatTag } from "../../lib/difficulty";
 
-const filters = ["All", "Easy", "Medium", "Hard", "Expert"] as const;
+type Filter = "ALL" | Difficulty;
 
-type Difficulty = (typeof filters)[number];
-
-const difficultyMeta: Record<
-  Exclude<Difficulty, "All">,
-  { tone: string; border: string; iconColor: string; icon: typeof ShieldCheck }
-> = {
-  Easy: { tone: "green", border: "border-l-green", iconColor: "text-emerald-400", icon: ShieldCheck },
-  Medium: { tone: "amber", border: "border-l-amber", iconColor: "text-amber", icon: ShieldCheck },
-  Hard: { tone: "rose", border: "border-l-rose", iconColor: "text-rose-400", icon: ShieldAlert },
-  Expert: { tone: "violet", border: "border-l-violet", iconColor: "text-violet-300", icon: Crown },
+const DIFFICULTY_ICON: Record<Difficulty, LucideIcon> = {
+  EASY: ShieldCheck,
+  MEDIUM: ShieldCheck,
+  HARD: ShieldAlert,
+  EXPERT: Crown,
 };
 
-const challenges = [
-  {
-    id: 101,
-    title: "Two Sum",
-    diff: "Easy",
-    tags: ["Array", "Hash Table"],
-    acceptance: "89.3%",
-    trophy: 100,
-    coins: 50,
-    desc: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.",
-  },
-  {
-    id: 102,
-    title: "Valid Parentheses",
-    diff: "Easy",
-    tags: ["String", "Stack"],
-    hot: true,
-    acceptance: "91.7%",
-    trophy: 100,
-    coins: 50,
-    desc: "Given a string s containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.",
-  },
-  {
-    id: 203,
-    title: "Longest Substring Without Repeating Characters",
-    diff: "Medium",
-    tags: ["Hash Table", "Sliding Window"],
-    acceptance: "68.1%",
-    trophy: 150,
-    coins: 75,
-    desc: "Given a string s, find the length of the longest substring without repeating characters.",
-  },
-  {
-    id: 215,
-    title: "Median of Two Sorted Arrays",
-    diff: "Hard",
-    tags: ["Array", "Binary Search"],
-    acceptance: "45.2%",
-    trophy: 200,
-    coins: 100,
-    desc: "Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.",
-  },
-  {
-    id: 321,
-    title: "Binary Tree Maximum Path Sum",
-    diff: "Expert",
-    tags: ["Tree", "Depth-First Search", "Dynamic Programming"],
-    acceptance: "28.4%",
-    trophy: 300,
-    coins: 150,
-    desc: "A path in a binary tree is a sequence of nodes where each pair of adjacent nodes in the sequence has an edge connecting them.",
-  },
-] as const;
+function signature(c: CatalogueChallenge) {
+  const params = c.function.parameters.map((p) => `${p.name}: ${p.type}`).join(", ");
+  return `${c.function.name}(${params}) → ${c.function.returnType}`;
+}
+
+function formatSeconds(ms: number) {
+  return ms % 1000 === 0 ? `${ms / 1000} s` : `${ms} ms`;
+}
 
 export default function ChallengesPage() {
-  const [active, setActive] = useState<Difficulty>("All");
+  const [catalogue, setCatalogue] = useState<CatalogueChallenge[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [active, setActive] = useState<Filter>("ALL");
+  const [tag, setTag] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const visible = useMemo(
-    () =>
-      challenges.filter(
-        (c) =>
-          (active === "All" || c.diff === active) &&
-          c.title.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [active, query],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    challengesApi.list().then(
+      (res) => {
+        if (!cancelled) setCatalogue(Array.isArray(res?.challenges) ? res.challenges : []);
+      },
+      () => {
+        if (!cancelled) setFailed(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  const retry = () => {
+    setFailed(false);
+    setAttempt((n) => n + 1);
+  };
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (catalogue ?? []).filter(
+      (c) =>
+        (active === "ALL" || c.difficulty === active) &&
+        (!tag || c.tags.includes(tag)) &&
+        (!needle ||
+          c.title.toLowerCase().includes(needle) ||
+          c.tags.some((t) => formatTag(t).toLowerCase().includes(needle))),
+    );
+  }, [catalogue, active, tag, query]);
+
+  const countFor = (filter: Filter) =>
+    filter === "ALL" ? (catalogue?.length ?? 0) : (catalogue ?? []).filter((c) => c.difficulty === filter).length;
 
   return (
-    <AppLayout sidebar={<ChallengesSidebar />} rail={<ChallengesRail />}>
+    <AppLayout
+      sidebar={<ChallengesSidebar />}
+      rail={
+        <ChallengesRail challenges={catalogue} failed={failed} onRetry={retry} activeTag={tag} onSelectTag={setTag} />
+      }
+    >
       <header className="flex items-start gap-3">
         <IconBadge tone="blue" size={40}>
           <Code2 size={19} strokeWidth={2.2} />
@@ -112,159 +87,120 @@ export default function ChallengesPage() {
         <div>
           <h1 className="text-[26px] font-extrabold tracking-[-0.02em]">Challenges</h1>
           <p className="mt-1 text-[13px] text-dim">
-            Sharpen your skills. Solve problems. Climb the leaderboard.
+            The published problems battles are drawn from. Both players get the same set.
           </p>
         </div>
       </header>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {filters.map((f) => (
+          {(["ALL", ...DIFFICULTIES] as Filter[]).map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setActive(f)}
+              aria-pressed={active === f}
               className={`rounded-lg border px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
                 active === f
                   ? "border-blue/40 bg-blue/12 text-blue-300"
                   : "border-line bg-panel text-muted hover:text-fg"
               }`}
             >
-              {f}
+              {f === "ALL" ? "All" : DIFFICULTY_META[f].label}
+              {catalogue && <span className="ml-1.5 font-normal text-dim">{countFor(f)}</span>}
             </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search challenges…"
-              aria-label="Search challenges"
-              className="field w-56 !pl-9"
-            />
-          </div>
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-line bg-panel px-4 py-2.5 text-[12.5px] font-semibold text-muted hover:text-fg"
-          >
-            <SlidersHorizontal size={14} /> Filters
-          </button>
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search challenges…"
+            aria-label="Search challenges"
+            className="field w-56 !pl-9"
+          />
         </div>
       </div>
 
+      {tag && (
+        <div className="mt-3 flex items-center gap-2 text-[12.5px] text-dim">
+          Tagged
+          <button
+            type="button"
+            onClick={() => setTag(null)}
+            className="inline-flex items-center gap-1 rounded-md border border-blue/30 bg-blue/10 px-2 py-[3px] text-[11.5px] font-semibold text-blue-300"
+            aria-label={`Remove the ${formatTag(tag)} filter`}
+          >
+            {formatTag(tag)} <X size={12} />
+          </button>
+        </div>
+      )}
+
       <div className="mt-4 space-y-3">
-        {visible.map((c) => {
-          const meta = difficultyMeta[c.diff];
-          const Icon = meta.icon;
-          return (
-            <article
-              key={c.id}
-              className={`card relative border-l-4 p-4 transition-colors hover:border-line/40 ${meta.border}`}
-            >
-              <button
-                type="button"
-                aria-label="Bookmark challenge"
-                className="absolute right-4 top-4 text-dim hover:text-fg"
-              >
-                <Bookmark size={15} />
+        {catalogue === null ? (
+          failed ? (
+            <div className="card p-10 text-center">
+              <p className="text-[13px] text-muted">The challenge catalogue could not be loaded.</p>
+              <button type="button" onClick={retry} className="btn btn-ghost mt-4 !py-2 !text-[12.5px]">
+                <RotateCcw size={14} /> Try again
               </button>
-
-              <div className="flex items-start gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 pr-6">
-                    <span className="text-[11.5px] font-mono text-dim">#{c.id}</span>
-                    <Icon size={14} className={meta.iconColor} strokeWidth={2.2} />
-                    <h2 className="text-[16px] font-bold leading-snug">{c.title}</h2>
-                    {"hot" in c && c.hot && <Flame size={14} className="text-amber" fill="currentColor" />}
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Tag tone={meta.tone}>{c.diff}</Tag>
-                    {c.tags.map((t) => (
-                      <Tag key={t} tone="slate">
-                        {t}
-                      </Tag>
-                    ))}
-                  </div>
-
-                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-dim">{c.desc}</p>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-5 text-[12px]">
-                    <span className="text-dim">
-                      Acceptance <strong className="font-semibold text-fg">{c.acceptance}</strong>
-                    </span>
-                    <span className="flex items-center gap-3 text-dim">
-                      Reward
-                      <span className="flex items-center gap-1 font-semibold text-amber">
-                        <Trophy size={12} strokeWidth={2.2} />
-                        {c.trophy}
-                      </span>
-                      <span className="flex items-center gap-1 font-semibold text-amber-300">
-                        <Coins size={12} strokeWidth={2.2} />
-                        {c.coins}
-                      </span>
-                    </span>
-                  </div>
+            </div>
+          ) : (
+            <p className="card p-10 text-center text-[13px] text-dim">Loading challenges…</p>
+          )
+        ) : catalogue.length === 0 ? (
+          <p className="card p-10 text-center text-[13px] text-dim">No challenges have been published yet.</p>
+        ) : visible.length === 0 ? (
+          <p className="card p-10 text-center text-[13px] text-dim">No challenges match your filters.</p>
+        ) : (
+          visible.map((c) => {
+            const meta = DIFFICULTY_META[c.difficulty];
+            const Icon = DIFFICULTY_ICON[c.difficulty];
+            return (
+              <article key={c.id} className={`card border-l-4 p-4 ${meta.border}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Icon size={14} className={meta.text} strokeWidth={2.2} />
+                  <h2 className="text-[16px] font-bold leading-snug">{c.title}</h2>
                 </div>
 
-                <Link
-                  href="#"
-                  className="btn btn-blue shrink-0 self-center !px-5 !py-2.5 !text-[12.5px]"
-                >
-                  Solve Now
-                </Link>
-              </div>
-            </article>
-          );
-        })}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Tag tone={meta.tone}>{meta.label}</Tag>
+                  {c.tags.map((t) => (
+                    <Tag key={t} tone="slate">
+                      {formatTag(t)}
+                    </Tag>
+                  ))}
+                </div>
 
-        {!visible.length && (
-          <p className="card p-10 text-center text-[13px] text-dim">
-            No challenges match your search yet.
-          </p>
+                <Markdown inline className="mt-2.5 line-clamp-2 text-[12.5px] leading-relaxed text-dim">
+                  {c.description}
+                </Markdown>
+
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-dim">
+                  <code className="rounded-md bg-black/25 px-2 py-1 font-mono text-[11.5px] text-muted">
+                    {signature(c)}
+                  </code>
+                  <span className="flex items-center gap-1.5">
+                    <Timer size={13} /> {formatSeconds(c.limits.timeLimitMs)} · {c.limits.memoryLimitMb} MB per test
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <FlaskConical size={13} /> {c.publicTestCount} {c.publicTestCount === 1 ? "example" : "examples"} +
+                    hidden tests
+                  </span>
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12px] text-dim">Showing 1-10 of 120 challenges</p>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            aria-label="Previous page"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel text-muted hover:text-fg"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          {[1, 2, 3].map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`h-8 w-8 rounded-lg text-[12.5px] font-semibold transition-colors ${
-                p === 1 ? "bg-blue text-white" : "border border-line bg-panel text-muted hover:text-fg"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-          <span className="px-1 text-[12.5px] text-dim">…</span>
-          <button
-            type="button"
-            className="h-8 w-8 rounded-lg border border-line bg-panel text-[12.5px] font-semibold text-muted hover:text-fg"
-          >
-            12
-          </button>
-          <button
-            type="button"
-            aria-label="Next page"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-panel text-muted hover:text-fg"
-          >
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      </div>
+      {catalogue && catalogue.length > 0 && (
+        <p className="mt-5 text-[12px] text-dim">
+          Showing {visible.length} of {catalogue.length} {catalogue.length === 1 ? "challenge" : "challenges"}
+        </p>
+      )}
     </AppLayout>
   );
 }

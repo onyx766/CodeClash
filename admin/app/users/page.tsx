@@ -32,12 +32,22 @@ const PAGE_SIZE = 20;
 function UsersPageInner() {
   const { user, loading: authLoading, isAdmin } = useRequireAdmin();
   const searchParams = useSearchParams();
+  const urlSearch = searchParams.get("search") ?? "";
 
   const [filters, setFilters] = useState<ListUsersQuery>({
     // Seeded from ?search= so the topbar search lands here with a query.
-    search: searchParams.get("search") ?? "",
+    search: urlSearch,
   });
   const [page, setPage] = useState(1);
+
+  // A later topbar search changes ?search= while this page stays mounted;
+  // follow it and start again from the first page.
+  const [syncedSearch, setSyncedSearch] = useState(urlSearch);
+  if (urlSearch !== syncedSearch) {
+    setSyncedSearch(urlSearch);
+    setFilters((current) => ({ ...current, search: urlSearch }));
+    setPage(1);
+  }
   const [sortBy, setSortBy] = useState<UserSortField>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -49,7 +59,6 @@ function UsersPageInner() {
     totalPages: 1,
   });
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -304,22 +313,9 @@ function UsersPageInner() {
             onReset={resetFilters}
           />
 
-          {selected.size > 0 ? (
-            <div className="flex items-center gap-3 border-b border-line bg-blue/8 px-4 py-2">
-              <p className="text-[12px] font-semibold text-blue-soft">
-                {selected.size} selected
-              </p>
-              <Button size="sm" onClick={() => setSelected(new Set())}>
-                Clear selection
-              </Button>
-            </div>
-          ) : null}
-
           <UsersTable
             users={users}
             loading={loading}
-            selected={selected}
-            onSelectedChange={setSelected}
             sortBy={sortBy}
             sortDir={sortDir}
             onSort={toggleSort}

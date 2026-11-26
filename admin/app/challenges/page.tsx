@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ApiError } from "../../lib/api";
 import { challengeService } from "../../services/challenge.service";
 import { useRequireAdmin } from "../../hooks/useAdminAuth";
@@ -43,10 +44,20 @@ const GRID = "md:grid-cols-[minmax(0,2fr)_110px_110px_130px_150px_minmax(150px,1
 const describe = (caught: unknown, fallback: string) =>
   caught instanceof ApiError ? caught.message : fallback;
 
-export default function ChallengesPage() {
+function ChallengesPageInner() {
   const { loading, isAdmin } = useRequireAdmin();
+  const searchParams = useSearchParams();
+  const urlSearch = searchParams.get("search") ?? "";
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(urlSearch);
+
+  // The topbar search navigates here with ?search=. Follow it whenever it
+  // changes, including while this page is already open.
+  const [syncedSearch, setSyncedSearch] = useState(urlSearch);
+  if (urlSearch !== syncedSearch) {
+    setSyncedSearch(urlSearch);
+    setSearch(urlSearch);
+  }
   const [rows, setRows] = useState<AdminChallengeSummary[]>([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -274,5 +285,19 @@ export default function ChallengesPage() {
         </Card>
       </div>
     </AdminShell>
+  );
+}
+
+export default function ChallengesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="grid min-h-screen place-items-center">
+          <IconSpinner size={18} />
+        </div>
+      }
+    >
+      <ChallengesPageInner />
+    </Suspense>
   );
 }

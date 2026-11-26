@@ -49,6 +49,9 @@ const ACTIVE_QUICK_MATCH_STATUSES: MatchStatus[] = [
   MatchStatus.IN_PROGRESS,
 ];
 
+/** How long a READY (both accepted) match may take to start before the sweep gives up on it. */
+export const READY_START_GRACE_MS = 30_000;
+
 @Injectable()
 export class MatchmakingService {
   private readonly logger = new Logger(MatchmakingService.name);
@@ -180,7 +183,12 @@ export class MatchmakingService {
       throw new InvalidMatchStateException('This match does not use ready confirmation.');
     }
     if (match.status !== MatchStatus.PENDING_READY && match.status !== MatchStatus.READY) {
-      throw new InvalidMatchStateException();
+      // Already started, cancelled or finished. Same 409 INVALID_MATCH_STATE
+      // as before - clients key off the code - with a message that says so
+      // instead of the exception's rating-oriented default.
+      throw new InvalidMatchStateException(
+        'This match is no longer waiting for players to accept.',
+      );
     }
     const participant = match.participants.find((p) => p.userId === userId);
     if (!participant) throw new ForbiddenException('You are not a participant in this match.');
@@ -190,6 +198,10 @@ export class MatchmakingService {
         where: { matchId_userId: { matchId, userId } },
         data: { readyAt: new Date() },
       });
+      // Both players see "accepted" right away instead of on their next poll.
+      for (const p of match.participants) {
+        this.emitToUser(p.userId, SocketEvents.MATCH_READY, { matchId, userId });
+      }
     }
 
     // Re-read fresh from the DB (not the snapshot above) so a concurrent
@@ -215,9 +227,11 @@ export class MatchmakingService {
     }
 
     // Same five-challenge battle engine as private rooms - only the match's
-    // QUICK_MATCH / ratingEligible values differ.
-    await this.matches.startQuickMatch(matchId);
-    return { matchId, status: MatchStatus.IN_PROGRESS };
+    // QUICK_MATCH / ratingEligible values differ. Report the status the start
+    // actually produced: it does not start a match that was cancelled in the
+    // meantime.
+    const started = await this.matches.startQuickMatch(matchId);
+    return { matchId, status: started?.status ?? MatchStatus.IN_PROGRESS };
   }
 
   // --- Background worker entry points ---------------------------------
@@ -239,21 +253,56 @@ export class MatchmakingService {
       if (await isStale(client, userId)) {
         await dequeue(client, userId);
         this.logger.log(`Removed stale Quick Match queue entry for user ${userId}`);
+        // Tell any tab still showing "Searching..." that it was dropped, so it
+        // can stop or re-enqueue instead of waiting forever.
+        this.emitToUser(userId, SocketEvents.MATCHMAKING_CANCELLED, { reason: 'STALE' });
       }
     }
   }
 
+  /**
+   * Cancels Quick Matches whose ready check expired and tells each player
+   * why, on their user channel:
+   * - a player who had not accepted: matchmaking:cancelled READY_TIMEOUT;
+   * - a player who accepted while the opponent did not:
+   *   matchmaking:opponent-unavailable, and they are put back in the queue;
+   * - both, when both accepted but the match still had not started a grace
+   *   period after the deadline: matchmaking:cancelled START_FAILED.
+   */
   async processReadyTimeouts(): Promise<void> {
+    const now = Date.now();
+    const startCutoff = new Date(now - READY_START_GRACE_MS);
     const expired = await this.prisma.match.findMany({
       where: {
         type: MatchType.QUICK_MATCH,
-        status: { in: [MatchStatus.PENDING_READY, MatchStatus.READY] },
-        readyDeadline: { lt: new Date() },
+        OR: [
+          // Somebody never accepted in time.
+          { status: MatchStatus.PENDING_READY, readyDeadline: { lt: new Date(now) } },
+          // READY means both accepted and a start is in flight; only a start
+          // that has been stuck well past the deadline is cancelled, so the
+          // sweep never races a start that is about to succeed.
+          { status: MatchStatus.READY, readyDeadline: { lt: startCutoff } },
+        ],
       },
       include: { participants: true },
     });
 
     for (const match of expired) {
+      const accepted = match.participants.filter((p) => p.readyAt);
+      const missed = match.participants.filter((p) => !p.readyAt);
+      // Everyone accepted but the row still says PENDING_READY: the accept
+      // that completed the pair is about to move it to READY and start it.
+      // It gets the same grace as a READY match instead of being cancelled
+      // under that start.
+      if (
+        match.status === MatchStatus.PENDING_READY &&
+        missed.length === 0 &&
+        match.readyDeadline &&
+        match.readyDeadline.getTime() >= startCutoff.getTime()
+      ) {
+        continue;
+      }
+
       // Optimistic, DB-native claim: only the instance/tick whose update
       // actually flips the row wins - safe with multiple backend instances
       // all running this same sweep, without any in-process timer.
@@ -263,23 +312,41 @@ export class MatchmakingService {
       });
       if (claim.count !== 1) continue;
 
-      const ready = match.participants.filter((p) => p.readyAt);
-      const notReady = match.participants.filter((p) => !p.readyAt);
-      this.logger.log(`Quick Match ${match.id} cancelled: ready timeout (${ready.length}/${match.participants.length} ready)`);
-
-      if (ready.length > 0 && notReady.length > 0) {
-        for (const p of ready) {
-          this.emitToUser(p.userId, SocketEvents.MATCHMAKING_OPPONENT_UNAVAILABLE, { matchId: match.id });
-        }
-        // Documented choice (spec section 35): automatically requeue whoever
-        // was ready, rather than dropping them back to IDLE.
-        for (const p of ready) {
-          await this.requeueAfterTimeout(p.userId, p.ratingBefore);
-        }
-      } else {
+      if (missed.length === 0) {
+        // Nobody missed the ready check, so nobody is requeued at the
+        // other's expense: both simply learn the match could not start.
+        this.logger.warn(
+          `Quick Match ${match.id} cancelled: both players accepted but it never started`,
+        );
         for (const p of match.participants) {
-          this.emitToUser(p.userId, SocketEvents.MATCHMAKING_CANCELLED, { matchId: match.id });
+          this.emitToUser(p.userId, SocketEvents.MATCHMAKING_CANCELLED, {
+            matchId: match.id,
+            reason: 'START_FAILED',
+          });
         }
+        continue;
+      }
+
+      this.logger.log(
+        `Quick Match ${match.id} cancelled: ready timeout (${accepted.length}/${match.participants.length} accepted)`,
+      );
+      for (const p of missed) {
+        this.emitToUser(p.userId, SocketEvents.MATCHMAKING_CANCELLED, {
+          matchId: match.id,
+          reason: 'READY_TIMEOUT',
+        });
+      }
+      for (const p of accepted) {
+        this.emitToUser(
+          p.userId,
+          SocketEvents.MATCHMAKING_OPPONENT_UNAVAILABLE,
+          { matchId: match.id },
+        );
+      }
+      // Documented choice (spec section 35): automatically requeue whoever
+      // was ready, rather than dropping them back to IDLE.
+      for (const p of accepted) {
+        await this.requeueAfterTimeout(p.userId, p.ratingBefore);
       }
     }
   }

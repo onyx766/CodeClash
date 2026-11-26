@@ -47,6 +47,11 @@ describe('ProfilesService', () => {
       challengesSolved: 128,
       coins: 2430,
       xp: 3450,
+      draws: 4,
+      casualWins: 9,
+      casualLosses: 6,
+      casualDraws: 1,
+      casualMatchesPlayed: 16,
     },
     preferences: {
       favoriteLanguages: ['JavaScript', 'TypeScript'],
@@ -95,9 +100,23 @@ describe('ProfilesService', () => {
         joinedAt: fullUser.createdAt,
       });
       expect(result.stats.globalRank).toBe(3);
+      // Ranked among active players only, like the leaderboard.
+      expect(prisma.userStats.count).toHaveBeenCalledWith({
+        where: {
+          rating: { gt: fullUser.stats.rating },
+          user: { role: 'USER', status: 'ACTIVE' },
+        },
+      });
       expect(result.stats.winRate).toBeCloseTo(75.29, 2);
       expect(result.stats.matchesPlayed).toBe(170);
       expect(result.stats.coins).toBe(2430);
+      expect(result.stats).toMatchObject({
+        draws: 4,
+        casualWins: 9,
+        casualLosses: 6,
+        casualDraws: 1,
+        casualMatchesPlayed: 16,
+      });
       expect(result.preferences).toEqual({
         favoriteLanguages: ['JavaScript', 'TypeScript'],
         favoriteTopics: ['Arrays', 'Graph'],
@@ -195,11 +214,30 @@ describe('ProfilesService', () => {
 
       expect(prisma.userProfile.update).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
-        data: { displayName: 'Tyler', bio: 'JS developer who loves algorithms.' },
+        data: {
+          displayName: 'Tyler',
+          bio: 'JS developer who loves algorithms.',
+        },
       });
       expect(prisma.userPreference.update).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
         data: {},
+      });
+    });
+
+    it('writes null for a cleared text field and leaves omitted ones out', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce({ id: 'user-1' });
+      prisma.user.findUnique.mockResolvedValueOnce(fullUser);
+
+      await service.updateMyProfile('user-1', {
+        displayName: null,
+        avatarUrl: null,
+        location: 'Berlin',
+      });
+
+      expect(prisma.userProfile.update).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        data: { displayName: null, avatarUrl: null, location: 'Berlin' },
       });
     });
 
@@ -211,10 +249,11 @@ describe('ProfilesService', () => {
         displayName: 'Tyler',
         // Simulates a caller bypassing the DTO type; the service must not
         // let these through regardless of what TypeScript would normally stop.
-        ...({ role: Role.MASTER, rating: 9999, coins: 999999 } as any),
+        ...({ role: Role.MASTER, rating: 9999, coins: 999999 } as object),
       });
 
-      const profileCallData = prisma.userProfile.update.mock.calls[0][0].data;
+      const [{ data: profileCallData }] = prisma.userProfile.update.mock
+        .calls[0] as [{ data: object }];
       expect(profileCallData).not.toHaveProperty('role');
       expect(profileCallData).not.toHaveProperty('rating');
       expect(profileCallData).not.toHaveProperty('coins');

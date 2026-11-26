@@ -307,7 +307,12 @@ describe('AdminChallengesService', () => {
 
     it.each([
       ['judge method', { judgeMethod: JudgeMethod.EXACT }],
-      ['function contract', { functionContract: CONTRACT }],
+      // A changed contract (here: new starter code). Re-sending the identical
+      // contract is not a change - see the published re-save test below.
+      [
+        'function contract',
+        { functionContract: { ...CONTRACT, starterCode: 'function solve(nums, target) {\n  return [];\n}\n' } },
+      ],
       ['reference solution', { referenceSolutionCode: 'function solve() {}' }],
       ['custom checker', { customCheckerCode: 'function check() {}' }],
       ['test generator', { testGeneratorCode: 'function generate() {}' }],
@@ -370,6 +375,48 @@ describe('AdminChallengesService', () => {
       } as UpsertChallengeDto);
 
       expect(prisma.challenge.update).toHaveBeenCalled();
+    });
+
+    it('accepts a full re-save of a published challenge when only presentation changed', async () => {
+      const row = challengeRow({ status: ChallengeStatus.PUBLISHED });
+      prisma.challenge.findUnique.mockResolvedValue(row);
+
+      // What the console sends: the whole draft, judging fields unchanged.
+      await service.update('challenge-1', {
+        title: 'Two Sum (revised wording)',
+        functionContract: CONTRACT,
+        judgeMethod: row.judgeMethod,
+        timeLimitMs: row.timeLimitMs,
+        memoryLimitMb: row.memoryLimitMb,
+        outputLimitKb: row.outputLimitKb,
+        referenceSolutionCode: '',
+        customCheckerCode: '',
+        testGeneratorCode: '',
+        testCases: row.testCases.map((t) => ({
+          input: t.input,
+          expectedOutput: t.expectedOutput,
+          isHidden: t.isHidden,
+        })),
+      } as unknown as UpsertChallengeDto);
+
+      const data = prisma.challenge.update.mock.calls[0][0].data;
+      expect(data.title).toBe('Two Sum (revised wording)');
+      expect(data.validationStatus).toBeUndefined();
+      expect(data.timeLimitMs).toBeUndefined();
+      expect(prisma.challengeTestCase.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a real judging change sent alongside presentation edits', async () => {
+      const row = challengeRow({ status: ChallengeStatus.PUBLISHED });
+      prisma.challenge.findUnique.mockResolvedValue(row);
+
+      await expect(
+        service.update('challenge-1', {
+          title: 'Two Sum',
+          timeLimitMs: row.timeLimitMs + 1000,
+        } as UpsertChallengeDto),
+      ).rejects.toBeInstanceOf(ChallengeLockedException);
+      expect(prisma.challenge.update).not.toHaveBeenCalled();
     });
 
     it('reports a missing challenge', async () => {
@@ -513,6 +560,70 @@ describe('AdminChallengesService', () => {
       await expect(service.remove('challenge-1')).rejects.toBeInstanceOf(
         ChallengeInUseException,
       );
+    });
+  });
+});
+
+describe('AdminChallengesService.stats', () => {
+  function serviceWith(
+    byStatus: Array<{ status: ChallengeStatus; _count: { _all: number } }>,
+    validationPassed: number,
+  ) {
+    const challenge = {
+      groupBy: jest.fn().mockResolvedValue(byStatus),
+      count: jest.fn().mockResolvedValue(validationPassed),
+      findMany: jest.fn(),
+    };
+    const service = new AdminChallengesService({ challenge } as never);
+    return { service, challenge };
+  }
+
+  it('counts every challenge in the database, past the 200-row list page', async () => {
+    const { service, challenge } = serviceWith(
+      [
+        { status: ChallengeStatus.DRAFT, _count: { _all: 250 } },
+        { status: ChallengeStatus.PUBLISHED, _count: { _all: 17 } },
+        { status: ChallengeStatus.ARCHIVED, _count: { _all: 3 } },
+      ],
+      16,
+    );
+
+    await expect(service.stats()).resolves.toEqual({
+      success: true,
+      stats: {
+        total: 270,
+        drafts: 250,
+        published: 17,
+        archived: 3,
+        validationPassed: 16,
+      },
+    });
+    expect(challenge.groupBy).toHaveBeenCalledWith({
+      by: ['status'],
+      _count: { _all: true },
+    });
+    // Passed validation whatever the status - drafts included.
+    expect(challenge.count).toHaveBeenCalledWith({
+      where: { validationStatus: ChallengeValidationStatus.PASSED },
+    });
+    expect(challenge.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reports zero for a status nobody has', async () => {
+    const { service } = serviceWith(
+      [{ status: ChallengeStatus.DRAFT, _count: { _all: 2 } }],
+      0,
+    );
+
+    await expect(service.stats()).resolves.toEqual({
+      success: true,
+      stats: {
+        total: 2,
+        drafts: 2,
+        published: 0,
+        archived: 0,
+        validationPassed: 0,
+      },
     });
   });
 });

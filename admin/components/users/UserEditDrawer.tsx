@@ -615,7 +615,7 @@ export function UserEditDrawer({
                   canModerate
                     ? "Sets a new password and ends every session the account has open."
                     : isSelf
-                      ? "Change your own password from your profile, not here."
+                      ? "To change your own password, use Change password in the account menu at the top right."
                       : "You can only reset passwords for accounts ranked below yours."
                 }
               >

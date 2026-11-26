@@ -91,6 +91,11 @@ export interface RunnerTestResult {
   memoryKb?: number;
   /** Short diagnostic. Never forwarded to a player for a hidden test. */
   message?: string | null;
+  /**
+   * JSON preview (truncated) of what the solution returned. Public tests
+   * only - always null for hidden ones.
+   */
+  actualOutput?: string | null;
 }
 
 export type ValidationCheckName =

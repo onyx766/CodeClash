@@ -48,12 +48,25 @@ export class AdminChallengesController {
   ) {}
 
   @Get()
-  list(@Query('status') status?: ChallengeStatus, @Query('search') search?: string) {
+  list(
+    @Query('status') status?: ChallengeStatus,
+    @Query('search') search?: string,
+  ) {
     const parsed =
       status && Object.values(ChallengeStatus).includes(status)
         ? status
         : undefined;
     return this.challenges.list(parsed, search?.slice(0, 120));
+  }
+
+  /**
+   * Overview counts (total, by status, validation passed), counted in the
+   * database rather than from list()'s capped page. Declared before ':id' so
+   * the literal path wins.
+   */
+  @Get('stats')
+  stats() {
+    return this.challenges.stats();
   }
 
   /** Downloadable starting point for the Import JSON mode. */
@@ -91,7 +104,11 @@ export class AdminChallengesController {
 
   @Post()
   create(@Req() req: Request, @Body() dto: UpsertChallengeDto) {
-    return this.challenges.create(req.user!.id, dto, ChallengeCreationMode.MANUAL);
+    return this.challenges.create(
+      req.user!.id,
+      dto,
+      ChallengeCreationMode.MANUAL,
+    );
   }
 
   @Patch(':id')

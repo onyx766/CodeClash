@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Mail, RefreshCw, X } from "lucide-react";
 import { ApiError, invitations as invitationsApi } from "../../lib/api";
+import { onEveryConnect } from "../../lib/socket";
+import useSocket from "../../hooks/useSocket";
 
 type ApiInvitation = {
   id: string;
@@ -36,6 +38,26 @@ export default function MyInvitations({
   useEffect(() => {
     load().then(() => setLoaded(true));
   }, [load]);
+
+  // New invitations arrive live; anything sent while the socket was down is
+  // picked up by re-reading the list on reconnect.
+  const socket = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+    const onReceived = (payload?: { invitation?: ApiInvitation }) => {
+      const invitation = payload?.invitation;
+      if (!invitation?.id) return;
+      setInvites((prev) => (prev.some((i) => i.id === invitation.id) ? prev : [invitation, ...prev]));
+    };
+    const stopConnect = onEveryConnect(socket, (reconnected) => {
+      if (reconnected) void load();
+    });
+    socket.on("invitation:received", onReceived);
+    return () => {
+      stopConnect();
+      socket.off("invitation:received", onReceived);
+    };
+  }, [socket, load]);
 
   const refresh = () => {
     setRefreshing(true);

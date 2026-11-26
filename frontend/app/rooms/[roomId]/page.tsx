@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft,
   BarChart3,
   Check,
   Clock,
@@ -14,17 +13,18 @@ import {
   Gem,
   Link2,
   Lock,
+  Mail,
   Plus,
   Send,
-  Settings,
   Users,
   XCircle,
 } from "lucide-react";
-import { getSocket } from "../../../lib/socket";
+import { joinChannel, onEveryConnect } from "../../../lib/socket";
 import { rooms, ApiError } from "../../../lib/api";
 import { ACTIVE_MATCH_STATUSES, type MatchStatus } from "../../../lib/battle";
 import useAuth from "../../../hooks/useAuth";
-import { currentUser } from "../../../lib/demo";
+import useProfile from "../../../hooks/useProfile";
+import useSocket from "../../../hooks/useSocket";
 import { Avatar, avatarForUserId } from "../../../components/ui/Bits";
 
 type RoomPlayer = {
@@ -58,6 +58,11 @@ export default function RoomPage() {
   const params = useParams();
   const roomId = params.roomId as string;
   const [room, setRoom] = useState<Room | null>(null);
+  const [loadError, setLoadError] = useState("");
+  // The host cancelled the room while we were in it.
+  const [closed, setClosed] = useState(false);
+  // "<user> accepted/declined your invitation."
+  const [notice, setNotice] = useState("");
   const [inviteInput, setInviteInput] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -67,49 +72,121 @@ export default function RoomPage() {
   const [startError, setStartError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const { user, clearActiveRoom } = useAuth();
+  const { profileUser, stats } = useProfile();
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
+  // invitationId -> username, to name the player in invitation:updated.
+  const invitedRef = useRef<Record<string, string>>({});
+
+  const socket = useSocket();
+
+  // Shows the room while it is still a waiting room; otherwise moves on.
+  const applyRoom = useCallback(
+    (data: Room) => {
+      if (data.match && ACTIVE_MATCH_STATUSES.includes(data.match.status)) {
+        // The match has started (e.g. after a refresh, or a missed match:started).
+        router.replace(`/match/${data.match.id}`);
+        return;
+      }
+      if (data.status === "FINISHED" || data.match) {
+        // Its match is over: nothing to wait for here any more.
+        clearActiveRoom();
+        router.replace("/lobby");
+        return;
+      }
+      // Pushed snapshots carry no presentation metadata; keep what GET gave us.
+      setRoom((prev) => ({ ...data, mode: data.mode ?? prev?.mode }));
+    },
+    [router, clearActiveRoom],
+  );
+
+  const load = useCallback(
+    () =>
+      rooms.get(roomId).then(
+        (data: Room) => {
+          setLoadError("");
+          applyRoom(data);
+        },
+        (err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) {
+            // Cancelled, expired or not ours - unless we are the ones leaving it.
+            if (!leavingRef.current) {
+              clearActiveRoom();
+              router.replace("/lobby");
+            }
+            return;
+          }
+          setLoadError(err instanceof ApiError ? err.message : "Could not load this room.");
+        },
+      ),
+    [roomId, applyRoom, clearActiveRoom, router],
+  );
+
+  // HTTP is the source of truth: load now, then every 5 s in case a push was
+  // missed (e.g. while the socket was reconnecting).
+  useEffect(() => {
+    if (closed) return;
+    void load();
+    const id = setInterval(() => void load(), 5000);
+    return () => clearInterval(id);
+  }, [load, closed]);
 
   useEffect(() => {
-    rooms
-      .get(roomId)
-      .then((data: Room) => {
-        // The match has already started (e.g. after a refresh) - rejoin it.
-        if (data.match && ACTIVE_MATCH_STATUSES.includes(data.match.status)) {
-          router.replace(`/match/${data.match.id}`);
-          return;
-        }
-        setRoom(data);
-      })
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 404) {
-          clearActiveRoom();
-          router.replace("/lobby");
-        }
-      });
-    const s = getSocket();
+    if (!socket) return;
     // Sent to both players' user channels when the host starts the match.
     const onMatchStarted = (payload: { matchId?: string }) => {
       if (payload?.matchId) router.push(`/match/${payload.matchId}`);
     };
-    s.on("match:started", onMatchStarted);
-    s.emit("room:join", { roomId });
-    s.on("room:update", (payload: { room?: Room | null }) => {
-      if (payload.room) {
-        setRoom(payload.room);
-      } else if (payload.room === null) {
-        // The room was cancelled or emptied out from under us (e.g. the host
-        // left) - bounce back to the lobby instead of showing stale state.
+    const onRoomUpdate = (payload: { room?: Room | null }) => {
+      if (payload.room === null) {
+        // The room no longer exists: the host cancelled it, or it emptied
+        // out. Our own leave/cancel navigates by itself.
+        if (leavingRef.current) return;
         clearActiveRoom();
-        router.replace("/lobby");
+        setClosed(true);
+      } else if (payload.room && payload.room.id === roomId) {
+        applyRoom(payload.room);
       }
-    });
-    return () => {
-      s.emit("room:leave", { roomId });
-      s.off("room:update");
-      s.off("match:started", onMatchStarted);
     };
-  }, [roomId]);
+    const onInvitationUpdated = (payload: { invitationId?: string; roomId?: string; status?: string }) => {
+      if (payload?.roomId !== roomId) return;
+      const name = (payload.invitationId && invitedRef.current[payload.invitationId]) || "Your friend";
+      setNotice(`${name} ${payload.status === "ACCEPTED" ? "accepted" : "declined"} your invitation.`);
+      if (payload.status === "ACCEPTED") void load();
+    };
+    // Room subscriptions belong to one connection: join again after every
+    // reconnect, and on a new socket after login or a session refresh.
+    let stopJoin = () => {};
+    const stopConnect = onEveryConnect(socket, () => {
+      stopJoin();
+      stopJoin = joinChannel(socket, "room:join", { roomId });
+    });
+    socket.on("match:started", onMatchStarted);
+    socket.on("room:update", onRoomUpdate);
+    socket.on("invitation:updated", onInvitationUpdated);
+    return () => {
+      stopConnect();
+      stopJoin();
+      if (socket.connected) socket.emit("room:leave", { roomId });
+      socket.off("room:update", onRoomUpdate);
+      socket.off("match:started", onMatchStarted);
+      socket.off("invitation:updated", onInvitationUpdated);
+    };
+  }, [socket, roomId, router, clearActiveRoom, applyRoom, load]);
+
+  // Let the player read why before returning them to the lobby.
+  useEffect(() => {
+    if (!closed) return;
+    const t = setTimeout(() => router.replace("/lobby"), 3000);
+    return () => clearTimeout(t);
+  }, [closed, router]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -157,6 +234,7 @@ export default function RoomPage() {
   };
 
   const leaveRoom = async () => {
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await rooms.leave(roomId);
@@ -172,9 +250,11 @@ export default function RoomPage() {
     e.preventDefault();
     setInviteMessage("");
     setInviteSending(true);
+    const username = inviteInput.trim();
     try {
-      await rooms.invite(roomId, inviteInput.trim());
-      setInviteMessage(`Invite sent to ${inviteInput.trim()}.`);
+      const invitation = (await rooms.invite(roomId, username)) as { id?: string };
+      if (invitation?.id) invitedRef.current[invitation.id] = username;
+      setInviteMessage(`Invite sent to ${username}.`);
       setInviteInput("");
     } catch (err) {
       setInviteMessage(err instanceof ApiError ? err.message : "Could not send invite.");
@@ -183,10 +263,31 @@ export default function RoomPage() {
     }
   };
 
+  if (closed) {
+    return (
+      <div className="cc-container flex h-screen items-center justify-center overflow-hidden">
+        <div className="card max-w-md p-6 text-center">
+          <h1 className="text-[18px] font-bold">Room closed</h1>
+          <p className="mt-2 text-[14px] text-muted">The host cancelled this room. Taking you back to the lobby…</p>
+          <Link href="/lobby" className="btn btn-blue mt-5">
+            Back to Lobby
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!room) {
     return (
       <div className="cc-container flex h-screen items-center justify-center overflow-hidden">
-        <p className="text-[13px] text-dim">Loading room…</p>
+        {loadError ? (
+          <div className="card max-w-md p-6 text-center">
+            <h1 className="text-[18px] font-bold">Room unavailable</h1>
+            <p className="mt-2 text-[14px] text-muted">{loadError} Retrying…</p>
+          </div>
+        ) : (
+          <p className="text-[13px] text-dim">Loading room…</p>
+        )}
       </div>
     );
   }
@@ -195,19 +296,16 @@ export default function RoomPage() {
 
   return (
     <div className="cc-container flex h-screen flex-col overflow-hidden py-3">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/lobby"
-          className="flex items-center gap-2 text-[13px] font-medium text-muted transition-colors hover:text-fg"
+      {notice && (
+        <p
+          role="status"
+          className="mb-2.5 flex shrink-0 items-center gap-2 rounded-lg border border-violet/30 bg-violet/10 px-3 py-2 text-[12.5px] text-violet-200"
         >
-          <ArrowLeft size={15} /> Back to Lobby
-        </Link>
-        <button type="button" className="btn btn-ghost !px-3.5 !py-2 !text-[12px]">
-          <Settings size={13} /> Room Settings
-        </button>
-      </div>
+          <Mail size={14} /> {notice}
+        </p>
+      )}
 
-      <section className="card mt-2.5 shrink-0 p-3.5 sm:p-4">
+      <section className="card shrink-0 p-3.5 sm:p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet to-violet-deep text-white">
@@ -279,7 +377,9 @@ export default function RoomPage() {
                   {isHostPlayer ? "Host" : "Challenger"}
                 </span>
                 <Avatar
-                  src={player.userId === user?.id ? currentUser.avatar : avatarForUserId(player.userId)}
+                  src={
+                    (player.userId === user?.id && profileUser?.avatarUrl) || avatarForUserId(player.userId)
+                  }
                   alt={player.user?.username ?? "Player"}
                   size={92}
                   ring={isHostPlayer}
@@ -288,9 +388,9 @@ export default function RoomPage() {
                 <p className="mt-1 flex shrink-0 flex-wrap items-center justify-center gap-1.5 text-[15px] font-bold">
                   {player.user?.username ?? "Unknown"}
                 </p>
-                {player.userId === user?.id && (
+                {player.userId === user?.id && stats && (
                   <p className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-violet-300">
-                    <Gem size={12} /> {currentUser.rating}
+                    <Gem size={12} /> {stats.rating}
                   </p>
                 )}
               </div>

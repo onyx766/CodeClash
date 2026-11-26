@@ -1,5 +1,13 @@
 import { Reflector } from '@nestjs/core';
-import { ExecutionContext, HttpException, ValidationPipe } from '@nestjs/common';
+import {
+  ExecutionContext,
+  HttpException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { App } from 'supertest/types';
 import { ChallengeCreationMode, Role } from '@prisma/client';
 import { AdminChallengesController } from './admin-challenges.controller';
 import { AdminChallengesService } from './admin-challenges.service';
@@ -167,5 +175,54 @@ describe('AdminChallengesController', () => {
       expect(mode).toBe(ChallengeCreationMode.JSON_IMPORT);
       expect(dto).not.toHaveProperty('status');
     });
+  });
+});
+
+describe('AdminChallengesController routing', () => {
+  it('serves GET stats from stats(), not as a challenge id', async () => {
+    const stats = {
+      success: true,
+      stats: {
+        total: 1,
+        drafts: 1,
+        published: 0,
+        archived: 0,
+        validationPassed: 0,
+      },
+    };
+    const challenges = {
+      stats: jest.fn().mockResolvedValue(stats),
+      getById: jest.fn(),
+    };
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AdminChallengesController],
+      providers: [
+        { provide: AdminChallengesService, useValue: challenges },
+        { provide: ChallengeValidationService, useValue: {} },
+        { provide: ChallengeImportService, useValue: {} },
+        { provide: ChallengeAiService, useValue: {} },
+        { provide: ChallengeBattlePoolService, useValue: {} },
+      ],
+    })
+      // Authorization is covered above; this is only about routing.
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    const app: INestApplication<App> = moduleRef.createNestApplication();
+    await app.init();
+
+    try {
+      const res = await request(app.getHttpServer()).get(
+        '/admin/challenges/stats',
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(stats);
+      expect(challenges.getById).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 });

@@ -5,18 +5,20 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import AuthLayout from "../../components/auth/AuthLayout";
-import { AuthCardHeader, SocialAuth } from "../../components/auth/AuthCard";
+import { AuthCardHeader } from "../../components/auth/AuthCard";
 import useAuth from "../../hooks/useAuth";
-
-function getNextPath(): string {
-  if (typeof window === "undefined") return "/lobby";
-  const next = new URLSearchParams(window.location.search).get("next");
-  return next && next.startsWith("/") ? next : "/lobby";
-}
+import useSearchParam from "../../hooks/useSearchParam";
+import { authErrorMessage } from "../../lib/authErrors";
+import { authHref, safeNextPath } from "../../lib/navigation";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
+  // Only ever a path on this site: never an open redirect.
+  const next = safeNextPath(useSearchParam("next"), "");
+  // Why the last session ended, when the app signed the player out itself.
+  const banned = useSearchParam("banned") === "1";
+  const expired = useSearchParam("expired") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,9 +32,9 @@ export default function LoginPage() {
 
     try {
       const { activeRoom } = await login(email, password);
-      router.push(activeRoom ? `/rooms/${activeRoom.id}` : getNextPath());
-    } catch {
-      setError("Login failed. Check your email and password.");
+      router.push(activeRoom ? `/rooms/${activeRoom.id}` : next || "/lobby");
+    } catch (err) {
+      setError(authErrorMessage(err, "Invalid email or password."));
     } finally {
       setBusy(false);
     }
@@ -46,6 +48,17 @@ export default function LoginPage() {
     >
       <div className="card p-6 sm:p-7">
         <AuthCardHeader title="Sign in" subtitle="Enter your details to access your account." />
+
+        {(banned || expired) && !error && (
+          <p
+            role={banned ? "alert" : "status"}
+            className={`mt-5 rounded-lg border px-3 py-2 text-[12.5px] ${
+              banned ? "border-rose/30 bg-rose/10 text-rose-300" : "border-blue/30 bg-blue/10 text-blue-200"
+            }`}
+          >
+            {banned ? "This account has been suspended." : "Your session has expired. Please sign in again."}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
           <div>
@@ -92,12 +105,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 text-[12px]">
-            <span className="text-dim">Keep me signed in</span>
-            <Link href="/forgot-password" className="font-medium text-blue-400 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+          <p className="text-[12px] text-dim">Forgot your password? An administrator can reset it for you.</p>
 
           {error && (
             <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-[12.5px] text-rose-300">
@@ -110,10 +118,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <SocialAuth />
-
         <p className="mt-5 text-center text-[12.5px] text-dim">
-          New to CodeClash? <Link href="/register" className="font-semibold text-blue-400 hover:underline">Create an account</Link>
+          New to CodeClash? <Link href={authHref("/register", next)} className="font-semibold text-blue-400 hover:underline">Create an account</Link>
         </p>
       </div>
     </AuthLayout>

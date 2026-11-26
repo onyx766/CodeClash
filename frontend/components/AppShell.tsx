@@ -7,6 +7,8 @@ import SiteFooter from "./layout/SiteFooter";
 import { AuthProvider } from "../hooks/useAuth";
 import useAuth from "../hooks/useAuth";
 import { ProfileProvider } from "../hooks/useProfile";
+import { QuickMatchProvider } from "../hooks/useQuickMatch";
+import QuickMatchIndicator from "./app/QuickMatchIndicator";
 
 const authRoutes = ["/login", "/register"];
 const guestRoutes = ["/"];
@@ -34,6 +36,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       {!hideHeader && <SiteHeader variant={variant} />}
       <div className="flex-1">{children}</div>
       {isGuest && <SiteFooter />}
+      {user && <QuickMatchIndicator />}
     </div>
   );
 }
@@ -42,7 +45,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <ProfileProvider>
-        <Shell>{children}</Shell>
+        <QuickMatchProvider>
+          <Shell>{children}</Shell>
+        </QuickMatchProvider>
       </ProfileProvider>
     </AuthProvider>
   );

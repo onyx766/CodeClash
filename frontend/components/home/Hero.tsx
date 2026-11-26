@@ -111,10 +111,8 @@ export default function Hero() {
               ))}
             </div>
             <div>
-              <p className="text-[13px] font-medium text-fg">12,248+ developers are already coding</p>
-              <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-dim">
-                <span className="dot-live" /> 1,248 online now
-              </p>
+              <p className="text-[13px] font-medium text-fg">Free to play, 1v1, in your browser</p>
+              <p className="mt-0.5 text-[12px] text-dim">Ranked Quick Match or private rooms with friends</p>
             </div>
           </div>
         </div>

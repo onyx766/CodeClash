@@ -55,8 +55,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new AccountBannedException();
     }
 
-    // Access tokens have no expiry, so this is the only thing that ends a
-    // session after an admin password reset.
+    // Ends a session immediately after an admin password reset (or a
+    // self-service password change) instead of when the token expires.
     if (isTokenRevoked(payload.iat, user.sessionsRevokedAt)) {
       throw new UnauthorizedException();
     }

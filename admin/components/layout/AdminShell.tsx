@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { usePlayerAppUrl } from "../../hooks/usePlayerAppUrl";
 import { Button, cx } from "../ui/Primitives";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import {
   IconAnalytics,
   IconAward,
@@ -12,6 +14,7 @@ import {
   IconDashboard,
   IconExternal,
   IconFile,
+  IconLock,
   IconLogo,
   IconLogout,
   IconMatches,
@@ -29,6 +32,13 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: IconDashboard },
   { href: "/users", label: "Users", icon: IconUsers },
   { href: "/challenges", label: "Challenges", icon: IconTrophy },
+] as const;
+
+/**
+ * Planned sections. Each route exists and says plainly that it is not built,
+ * but they are kept apart and muted so nobody mistakes them for working tools.
+ */
+const COMING_SOON = [
   { href: "/matches", label: "Matches", icon: IconMatches },
   { href: "/rooms", label: "Rooms", icon: IconRooms },
   { href: "/submissions", label: "Submissions", icon: IconFile },
@@ -38,9 +48,6 @@ const NAV = [
   { href: "/reports", label: "Reports", icon: IconReport },
   { href: "/settings", label: "Settings", icon: IconSettings },
 ] as const;
-
-const PLAYER_APP_URL =
-  process.env.NEXT_PUBLIC_PLAYER_APP_URL ?? "http://localhost:3000";
 
 function initials(name: string) {
   return name.slice(0, 2).toUpperCase();
@@ -120,7 +127,9 @@ export function AdminShell({
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAdminAuth();
+  const playerAppUrl = usePlayerAppUrl();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   return (
     <div className="flex min-h-full">
@@ -166,6 +175,30 @@ export function AdminShell({
               );
             })}
           </ul>
+
+          <p className="eyebrow mt-6 mb-1.5 px-3 text-faint">Coming soon</p>
+          <ul className="space-y-0.5">
+            {COMING_SOON.map((item) => {
+              const active = pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={cx(
+                      "flex items-center gap-3 rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                      active
+                        ? "bg-panel-2 text-muted"
+                        : "text-faint hover:bg-panel-2/60 hover:text-dim",
+                    )}
+                  >
+                    <Icon size={16} />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
         <div className="border-t border-line p-3">
@@ -177,7 +210,6 @@ export function AdminShell({
             <p className="mt-1 text-[11px] leading-4 text-dim">
               Competitive coding for everyone
             </p>
-            <p className="mono mt-2 text-[10px] text-faint">v1.0.0</p>
           </div>
         </div>
       </aside>
@@ -212,7 +244,7 @@ export function AdminShell({
 
           <div className="ml-auto flex items-center gap-2">
             <a
-              href={PLAYER_APP_URL}
+              href={playerAppUrl}
               target="_blank"
               rel="noreferrer"
               className="hidden items-center gap-2 rounded-[9px] border border-line px-3 py-1.5 text-[12px] font-semibold text-muted transition-colors hover:border-panel-3 hover:text-fg sm:inline-flex"
@@ -265,6 +297,20 @@ export function AdminShell({
                     <Button
                       variant="ghost"
                       size="sm"
+                      role="menuitem"
+                      className="w-full justify-start"
+                      icon={<IconLock size={15} />}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setPasswordOpen(true);
+                      }}
+                    >
+                      Change password
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      role="menuitem"
                       className="w-full justify-start"
                       icon={<IconLogout size={15} />}
                       onClick={async () => {
@@ -284,6 +330,13 @@ export function AdminShell({
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
+
+      {passwordOpen ? (
+        <ChangePasswordDialog
+          email={user?.email}
+          onClose={() => setPasswordOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
